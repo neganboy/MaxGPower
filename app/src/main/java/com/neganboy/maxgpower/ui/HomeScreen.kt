@@ -58,6 +58,16 @@ fun HomeScreen(vm: MaxGViewModel, state: MaxGState) {
             }
         }
 
+        // El módulo no reconoce el dispositivo (DEV|0): se muestra el motivo.
+        if (!state.device.ok && state.device.why.isNotEmpty()) {
+            item {
+                NeuCard(Modifier.padding(top = 18.dp)) {
+                    Text("Revisar dispositivo", fontWeight = FontWeight.Bold, color = NeuColors.Warn, fontSize = 16.sp)
+                    SectionSub(state.device.why)
+                }
+            }
+        }
+
         // Anillo principal del perfil activo
         item {
             NeuCard(Modifier.padding(top = 18.dp)) {

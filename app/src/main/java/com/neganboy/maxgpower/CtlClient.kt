@@ -25,6 +25,15 @@ object CtlClient {
 
     fun state(kind: String = "full"): MaxGState = MaxGState.parse(run("state", kind))
 
+    /**
+     * Ejecuta `state <kind>`; null si no llegó ninguna sección SECT|
+     * (ctl.sh no respondió). Evita que un vacío borre el estado bueno.
+     */
+    fun stateOrNull(kind: String = "full"): MaxGState? {
+        val out = run("state", kind)
+        return if (out.contains("SECT|")) MaxGState.parse(out) else null
+    }
+
     fun info(): MaxGState = MaxGState.parse(run("info"))
 
     /** Ejecuta un comando y extrae el RESULT|... si lo hay. */

@@ -86,6 +86,7 @@ class MainActivity : ComponentActivity() {
     private fun MaxGApp() {
         val state by vm.state.collectAsState()
         val loading by vm.loading.collectAsState()
+        val connected by vm.connected.collectAsState()
         val busy by vm.busy.collectAsState()
         val message by vm.message.collectAsState()
         val snackbarHostState = remember { SnackbarHostState() }
@@ -134,7 +135,7 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                             Text(
-                                "v1.1 · por Neganboy · hecho para tu Poco F8 Pro",
+                                "v1.2 · por Neganboy · hecho para tu Poco F8 Pro",
                                 fontSize = 12.sp, color = NeuColors.Muted, modifier = Modifier.padding(top = 2.dp)
                             )
                         }
@@ -151,14 +152,14 @@ class MainActivity : ComponentActivity() {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 val dot = when {
                                     loading -> NeuColors.Warn
-                                    state.device.ok -> NeuColors.Ok
+                                    connected -> NeuColors.Ok
                                     else -> NeuColors.Bad
                                 }
                                 Box(Modifier.size(8.dp).background(dot, CircleShape))
                                 Text(
                                     when {
                                         loading -> "Conectando…"
-                                        state.device.ok -> "Conectado"
+                                        connected -> "Conectado"
                                         else -> "Sin respuesta"
                                     },
                                     fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = NeuColors.Muted,

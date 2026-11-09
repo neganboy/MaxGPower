@@ -30,6 +30,10 @@ class MaxGViewModel : ViewModel() {
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()
 
+    /** true cuando ctl.sh respondió con secciones SECT| (hay comunicación). */
+    private val _connected = MutableStateFlow(false)
+    val connected: StateFlow<Boolean> = _connected.asStateFlow()
+
     private var polling = false
 
     fun start() {
@@ -55,7 +59,10 @@ class MaxGViewModel : ViewModel() {
     private fun mergeLive(live: MaxGState) {
         _state.update { cur ->
             cur.copy(
-                device = live.device, profile = live.profile, safe = live.safe,
+                // `state live` NO imprime DEV: si se copiara tal cual, el
+                // dispositivo quedaría en "Sin respuesta" a los 3 s de abrir.
+                device = if (live.device.ok) live.device else cur.device,
+                profile = live.profile, safe = live.safe,
                 bootCount = live.bootCount, govCur = live.govCur, govList = live.govList,
                 govCfg = live.govCfg, gpu = live.gpu, romLimits = live.romLimits,
                 gpuMode = live.gpuMode, gpuMaxPct = live.gpuMaxPct,
@@ -92,25 +99,69 @@ class MaxGViewModel : ViewModel() {
         }
     }
 
+    /**
+     * Carga completa en partes, como la WebUI: `state boot` trae el núcleo
+     * + el dispositivo + las tablas de perfiles (rápido, sin pm/dumpsys),
+     * `state more` trae Mando/Auto (lento) y `info` los datos del sistema.
+     * Si boot no responde, se junta `live` + `static` para no quedarse en
+     * blanco. Un `state full` único es lento y frágil en este teléfono.
+     */
     fun refreshFull() {
         viewModelScope.launch {
             _loading.value = true
-            val full = withContext(Dispatchers.IO) {
-                runCatching { CtlClient.state("full") }.getOrNull()
+            val boot = withContext(Dispatchers.IO) {
+                runCatching { CtlClient.stateOrNull("boot") }.getOrNull()
             }
-            if (full != null) _state.value = full
+            val more = withContext(Dispatchers.IO) {
+                runCatching { CtlClient.stateOrNull("more") }.getOrNull()
+            }
             val info = withContext(Dispatchers.IO) {
                 runCatching { CtlClient.info() }.getOrNull()
             }
-            if (info != null) _state.update { it.copy(info = info.info) }
+            var s: MaxGState? = boot
+            if (s == null) {
+                val live = withContext(Dispatchers.IO) {
+                    runCatching { CtlClient.stateOrNull("live") }.getOrNull()
+                }
+                val static = withContext(Dispatchers.IO) {
+                    runCatching { CtlClient.stateOrNull("static") }.getOrNull()
+                }
+                if (live != null) {
+                    s = live.copy(
+                        plans = static?.plans ?: emptyMap(),
+                        freqs = static?.freqs ?: emptyMap(),
+                        customProfiles = static?.customProfiles ?: emptyList()
+                    )
+                }
+            }
+            if (s != null) {
+                _connected.value = true
+                if (more != null) {
+                    s = s.copy(
+                        bt = more.bt, btPrio = more.btPrio, btScan = more.btScan,
+                        btNice = more.btNice, auto = more.auto, autoApps = more.autoApps,
+                        autoRecent = more.autoRecent, autoMboost = more.autoMboost,
+                        autoBoostMethod = more.autoBoostMethod,
+                        autoBoostDesc = more.autoBoostDesc, pad = more.pad,
+                        padOpt = more.padOpt, padTests = more.padTests,
+                        padScan = more.padScan, tune = more.tune, maint = more.maint,
+                        deluxe = more.deluxe, sessions = more.sessions
+                    )
+                }
+                if (info != null) s = s.copy(info = info.info)
+                _state.value = s
+            } else {
+                _connected.value = false
+            }
             _loading.value = false
         }
     }
 
     private suspend fun refreshLive() {
         val live = withContext(Dispatchers.IO) {
-            runCatching { CtlClient.state("live") }.getOrNull()
+            runCatching { CtlClient.stateOrNull("live") }.getOrNull()
         } ?: return
+        _connected.value = true
         val info = withContext(Dispatchers.IO) {
             runCatching { CtlClient.info() }.getOrNull()
         }
@@ -120,8 +171,9 @@ class MaxGViewModel : ViewModel() {
 
     private suspend fun refreshMore() {
         val more = withContext(Dispatchers.IO) {
-            runCatching { CtlClient.state("more") }.getOrNull()
+            runCatching { CtlClient.stateOrNull("more") }.getOrNull()
         } ?: return
+        _connected.value = true
         mergeMore(more)
     }
 
