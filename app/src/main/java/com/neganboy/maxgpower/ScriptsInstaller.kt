@@ -11,7 +11,10 @@ object ScriptsInstaller {
 
     const val CONF_DIR = "/data/adb/maxg_power"
     const val BIN_DIR = "$CONF_DIR/bin"
-    private const val MARKER = "$BIN_DIR/.maxg-app-v1"
+    // v2: la v1 copiaba los scripts con el prefijo maxg_ (maxg_ctl.sh) y
+    // ctl.sh no existía, así que ningún comando se aplicaba. Ahora se
+    // quita el prefijo al copiar y se borran los restos de la v1.
+    private const val MARKER = "$BIN_DIR/.maxg-app-v2"
 
     /** Copia los scripts si falta el marcador de esta versión. Devuelve true si están listos. */
     fun ensureInstalled(context: Context): Boolean {
@@ -29,12 +32,15 @@ object ScriptsInstaller {
                 }
             }
         }
-        // 2) directorio privado -> /data/adb/maxg_power/bin (con root)
+        // 2) directorio privado -> /data/adb/maxg_power/bin (con root).
+        //    Los archivos se guardan como maxg_<nombre> y SE LES QUITA el
+        //    prefijo al copiar, para que queden lib.sh, ctl.sh, etc.
         val r = RootShell.exec(
             "mkdir -p $BIN_DIR && " +
-            "cp $filesDir/maxg_*.sh $BIN_DIR/ && " +
+            "rm -f $BIN_DIR/maxg_*.sh && " +
+            "for f in $filesDir/maxg_*.sh; do n=\${f##*/}; cp \"\$f\" \"$BIN_DIR/\${n#maxg_}\"; done && " +
             "chmod 0755 $BIN_DIR/*.sh && " +
-            "touch $MARKER && echo ok"
+            "touch $MARKER && ls $BIN_DIR/ctl.sh $BIN_DIR/lib.sh $BIN_DIR/service.sh >/dev/null && echo ok"
         )
         return r.code == 0 && r.out.contains("ok")
     }
