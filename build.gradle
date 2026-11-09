@@ -1,0 +1,3 @@
+// MaxG Power: los plugins se declaran en app/build.gradle con el DSL
+// plugins {} (con versión). No usar buildscript aquí: un plugin ya en el
+// classpath del buildscript bloquea su declaración con versión en el DSL.

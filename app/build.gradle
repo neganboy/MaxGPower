@@ -1,0 +1,84 @@
+plugins {
+    id 'com.android.application' version '8.11.1'
+    id 'org.jetbrains.kotlin.android' version '2.0.21'
+    id 'org.jetbrains.kotlin.plugin.compose' version '2.0.21'
+}
+
+android {
+    namespace 'com.neganboy.maxgpower'
+    compileSdk 36
+    buildToolsVersion "36.1.0"
+
+    buildFeatures {
+        compose true
+    }
+
+    defaultConfig {
+        applicationId "com.neganboy.maxgpower"
+        minSdk 28
+        targetSdk 36
+        versionCode 1
+        versionName "1.0"
+    }
+
+    // Firma de lanzamiento: las claves MAXG_*/LUCILLE_* viven en
+    // ~/.gradle/gradle.properties, fuera del repositorio. Sin ellas, el
+    // release se compila sin firmar para que cualquiera pueda compilarlo.
+    // Se leen del archivo directamente y de DOS ubicaciones: el user.home
+    // de Java (/root) y el $HOME del shell (/home/hatch), porque /root
+    // se pierde cuando se reemplaza la VM.
+    def keystoreProps = new Properties()
+    def propsFiles = [
+        file("${System.getProperty('user.home')}/.gradle/gradle.properties"),
+        file("${System.getenv('HOME')}/.gradle/gradle.properties")
+    ]
+    propsFiles.each { f ->
+        if (f.exists()) {
+            f.withInputStream { keystoreProps.load(it) }
+        }
+    }
+    signingConfigs {
+        release {
+            def storeFilePath = keystoreProps.getProperty('LUCILLE_STORE_FILE')
+            if (storeFilePath != null && file(storeFilePath).exists()) {
+                storeFile file(storeFilePath)
+                storePassword keystoreProps.getProperty('LUCILLE_STORE_PASSWORD')
+                keyAlias keystoreProps.getProperty('MAXG_KEY_ALIAS', 'maxg')
+                keyPassword keystoreProps.getProperty('MAXG_KEY_PASSWORD')
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            signingConfig signingConfigs.release
+        }
+        debug {
+            debuggable true
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+}
+
+dependencies {
+    implementation 'androidx.core:core-ktx:1.12.0'
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    // Interfaz nativa: Jetpack Compose + Material 3 (nada de WebView)
+    def composeBom = platform('androidx.compose:compose-bom:2024.10.00')
+    implementation composeBom
+    implementation 'androidx.compose.ui:ui'
+    implementation 'androidx.compose.material3:material3'
+    implementation 'androidx.activity:activity-compose:1.9.2'
+    implementation 'androidx.lifecycle:lifecycle-viewmodel-compose:2.8.5'
+    implementation 'androidx.lifecycle:lifecycle-runtime-compose:2.8.5'
+    implementation 'androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.5'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1'
+}
