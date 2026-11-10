@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<paths>
-    <!-- La APK que baja el actualizador, para el instalador de Android -->
-    <cache-path name="updates" path="updates/" />
-</paths>

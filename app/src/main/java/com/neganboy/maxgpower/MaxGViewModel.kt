@@ -1,6 +1,5 @@
 package com.neganboy.maxgpower
 
-import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
@@ -11,46 +10,16 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
 
 /**
  * Estado de la app: carga `state full` al abrir, luego sondea `state live`
  * + `info` cada 3 s (temperaturas, batería, frecuencias) y `state more`
  * cada 15 s. Los comandos se ejecutan en IO y refrescan el estado.
  */
-sealed interface UpdateUiState {
-    data object Idle : UpdateUiState
-    data object Checking : UpdateUiState
-    data class UpToDate(val version: String) : UpdateUiState
-    data class Available(val release: AppUpdater.ReleaseInfo) : UpdateUiState
-    data class Downloading(val progress: Int) : UpdateUiState
-    data class Downloaded(val file: File) : UpdateUiState
-    data class Error(val message: String) : UpdateUiState
-}
-
 class MaxGViewModel : ViewModel() {
 
     private val _state = MutableStateFlow(MaxGState())
     val state: StateFlow<MaxGState> = _state.asStateFlow()
-
-    /** Estado del actualizador (revisar GitHub, descargar, instalar). */
-    private val _update = MutableStateFlow<UpdateUiState>(UpdateUiState.Idle)
-    val update: StateFlow<UpdateUiState> = _update.asStateFlow()
-
-    /** Resultado de la última prueba de conexión (para saber por qué no conecta a GitHub). */
-    private val _diag = MutableStateFlow<AppUpdater.NetDiag?>(null)
-    val diag: StateFlow<AppUpdater.NetDiag?> = _diag.asStateFlow()
-    private val _diagBusy = MutableStateFlow(false)
-    val diagBusy: StateFlow<Boolean> = _diagBusy.asStateFlow()
-
-    /** Prueba la conexión paso a paso (red, DNS, página de GitHub). */
-    fun runDiag(context: Context) {
-        viewModelScope.launch {
-            _diagBusy.value = true
-            _diag.value = AppUpdater.diagnose(context.applicationContext)
-            _diagBusy.value = false
-        }
-    }
 
     private val _loading = MutableStateFlow(true)
     val loading: StateFlow<Boolean> = _loading.asStateFlow()
@@ -222,49 +191,6 @@ class MaxGViewModel : ViewModel() {
                 _message.value = res.detail.ifEmpty { "$label: ${if (res.ok) "listo" else "falló"}" }
             }
             refreshFull()
-        }
-    }
-
-    /** Revisa en GitHub si hay una versión más nueva que la instalada. */
-    fun checkUpdates(context: Context, silent: Boolean = false) {
-        if (_update.value is UpdateUiState.Checking) return
-        viewModelScope.launch {
-            _update.value = UpdateUiState.Checking
-            when (val r = AppUpdater.checkLatest(context.applicationContext)) {
-                is AppUpdater.CheckResult.Available -> _update.value = UpdateUiState.Available(r.release)
-                is AppUpdater.CheckResult.UpToDate -> _update.value = UpdateUiState.UpToDate(AppUpdater.installedVersion(context))
-                // La revisión automática no deja el error en rojo al abrir: solo se muestra si el usuario buscó a mano.
-                is AppUpdater.CheckResult.Error -> {
-                    _update.value = if (silent) UpdateUiState.Idle else UpdateUiState.Error(r.message)
-                    // Si falló, prueba la conexión sola para mostrar el motivo exacto.
-                    if (!silent) runDiag(context)
-                }
-            }
-        }
-    }
-
-    /** Revisa solo si pasaron más de 24 h desde la última revisión (al abrir la app). */
-    fun checkUpdatesIfDue(context: Context) {
-        val prefs = context.getSharedPreferences("maxg", Context.MODE_PRIVATE)
-        val last = prefs.getLong("update_last_check", 0)
-        if (System.currentTimeMillis() - last < 24 * 60 * 60 * 1000L) return
-        prefs.edit().putLong("update_last_check", System.currentTimeMillis()).apply()
-        checkUpdates(context, silent = true)
-    }
-
-    /** Descarga la APK del release disponible (verifica paquete y firma antes de avisar que está lista). */
-    fun downloadUpdate(context: Context) {
-        val release = (_update.value as? UpdateUiState.Available)?.release ?: return
-        viewModelScope.launch {
-            _update.value = UpdateUiState.Downloading(0)
-            try {
-                val file = AppUpdater.downloadApk(context.applicationContext, release) { p ->
-                    _update.value = UpdateUiState.Downloading(p)
-                }
-                _update.value = UpdateUiState.Downloaded(file)
-            } catch (e: Exception) {
-                _update.value = UpdateUiState.Error(e.message ?: "No se pudo descargar")
-            }
         }
     }
 

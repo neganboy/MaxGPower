@@ -103,8 +103,6 @@ class MainActivity : ComponentActivity() {
                 onModuleConflict = { showModuleConflict = true },
                 onBattery = { showBattery = true }
             )
-            // Revisa actualizaciones en GitHub solo si pasó más de un día desde la última vez.
-            vm.checkUpdatesIfDue(this@MainActivity)
         }
 
         LaunchedEffect(message) {
@@ -137,7 +135,7 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                             Text(
-                                "v1.8 · por Neganboy · hecho para tu Poco F8 Pro",
+                                "v1.9 · por Neganboy · hecho para tu Poco F8 Pro",
                                 fontSize = 12.sp, color = NeuColors.Muted, modifier = Modifier.padding(top = 2.dp)
                             )
                         }
