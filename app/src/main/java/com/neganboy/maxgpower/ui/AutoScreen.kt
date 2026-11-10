@@ -1,5 +1,6 @@
 package com.neganboy.maxgpower.ui
 
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -10,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -22,6 +24,7 @@ import androidx.compose.ui.unit.sp
 import com.neganboy.maxgpower.CtlClient
 import com.neganboy.maxgpower.MaxGState
 import com.neganboy.maxgpower.MaxGViewModel
+import com.neganboy.maxgpower.ThemeMode
 
 /**
  * Pestaña Auto, copiada de la WebUI (s-auto): modo inteligente,
@@ -56,6 +59,40 @@ fun AutoScreen(vm: MaxGViewModel, state: MaxGState, onOpenLog: (String) -> Unit,
                 Text(
                     if (state.auto.alive) "Vigilante activo" else "Vigilante parado",
                     fontSize = 12.5.sp, color = NeuColors.Muted, modifier = Modifier.padding(top = 8.dp)
+                )
+            }
+        }
+
+        // Modo noche
+        item {
+            NeuCard(Modifier.padding(top = 20.dp)) {
+                SectionTitle("Modo noche")
+                SectionSub("Automático sigue el modo oscuro de tu teléfono. También puedes fijar claro u oscuro a mano.")
+                Spacer(Modifier.height(12.dp))
+                val themeMode by vm.themeMode.collectAsState()
+                val systemDark = isSystemInDarkTheme()
+                ChipFlow(
+                    listOf("system" to "Automático", "light" to "Claro", "dark" to "Oscuro"),
+                    when (themeMode) {
+                        ThemeMode.LIGHT -> "light"
+                        ThemeMode.DARK -> "dark"
+                        else -> "system"
+                    }
+                ) { id ->
+                    vm.setThemeMode(context, when (id) {
+                        "light" -> ThemeMode.LIGHT
+                        "dark" -> ThemeMode.DARK
+                        else -> ThemeMode.SYSTEM
+                    })
+                }
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    when (themeMode) {
+                        ThemeMode.LIGHT -> "Ahora: claro (manual)."
+                        ThemeMode.DARK -> "Ahora: oscuro (manual)."
+                        else -> if (systemDark) "Ahora: oscuro (tu teléfono está en modo oscuro)." else "Ahora: claro (tu teléfono está en modo claro)."
+                    },
+                    fontSize = 12.5.sp, color = NeuColors.Muted
                 )
             }
         }

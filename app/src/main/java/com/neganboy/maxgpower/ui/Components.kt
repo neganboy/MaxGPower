@@ -46,7 +46,7 @@ fun NeuCard(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .shadow(10.dp, RoundedCornerShape(32.dp), ambientColor = Color(0xFF92A0B8), spotColor = Color(0xFF92A0B8))
+            .shadow(10.dp, RoundedCornerShape(32.dp), ambientColor = NeuColors.Shadow, spotColor = NeuColors.Shadow)
             .background(
                 Brush.verticalGradient(listOf(NeuColors.CardTop, NeuColors.CardBottom)),
                 RoundedCornerShape(32.dp)
@@ -108,11 +108,11 @@ fun NeuSwitch(checked: Boolean, enabled: Boolean = true, modifier: Modifier = Mo
                 .align(Alignment.CenterStart)
                 .offset(x = if (checked) 57.dp else 5.dp)
                 .shadow(6.dp, RoundedCornerShape(24.dp))
-                .background(Brush.verticalGradient(listOf(Color.White, Color(0xFFE3E8EF))), RoundedCornerShape(24.dp)),
+                .background(Brush.verticalGradient(listOf(NeuColors.KnobTop, NeuColors.KnobBottom)), RoundedCornerShape(24.dp)),
             contentAlignment = Alignment.Center
         ) {
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                repeat(3) { Box(Modifier.size(3.dp, 22.dp).background(Color(0x598C9BB4), RoundedCornerShape(2.dp))) }
+                repeat(3) { Box(Modifier.size(3.dp, 22.dp).background(NeuColors.KnobLine, RoundedCornerShape(2.dp))) }
             }
         }
     }
@@ -128,28 +128,34 @@ fun RingGauge(
     ringSize: Dp = 132.dp,
     modifier: Modifier = Modifier
 ) {
+    // Los colores se leen aquí (contexto @Composable): dentro del Canvas no se puede.
+    val track = NeuColors.Track
+    val blue1 = NeuColors.Blue1
+    val blue2 = NeuColors.Blue2
+    val innerTrack = NeuColors.InnerTrack
+    val ringGray = NeuColors.RingGray
     Box(modifier = modifier.size(ringSize), contentAlignment = Alignment.Center) {
         Canvas(Modifier.size(ringSize)) {
             val strokeA = 7.dp.toPx()
             val strokeB = 6.dp.toPx()
             val rA = (size.minDimension - strokeA) / 2f
             val rB = rA - 11.dp.toPx()
-            val grad = Brush.sweepGradient(listOf(NeuColors.Blue1, NeuColors.Blue2), center)
-            drawArc(NeuColors.Track, -90f, 360f, false, topLeft = center - Offset(rA, rA), size = androidx.compose.ui.geometry.Size(rA * 2, rA * 2), style = Stroke(strokeA, cap = StrokeCap.Round))
+            val grad = Brush.sweepGradient(listOf(blue1, blue2), center)
+            drawArc(track, -90f, 360f, false, topLeft = center - Offset(rA, rA), size = androidx.compose.ui.geometry.Size(rA * 2, rA * 2), style = Stroke(strokeA, cap = StrokeCap.Round))
             drawArc(grad, -90f, (pctA.coerceIn(0f, 100f) * 3.6f), false, topLeft = center - Offset(rA, rA), size = androidx.compose.ui.geometry.Size(rA * 2, rA * 2), style = Stroke(strokeA, cap = StrokeCap.Round))
             if (pctB != null) {
-                drawArc(Color(0x1F8C9BB4), -90f, 360f, false, topLeft = center - Offset(rB, rB), size = androidx.compose.ui.geometry.Size(rB * 2, rB * 2), style = Stroke(strokeB, cap = StrokeCap.Round))
-                drawArc(NeuColors.RingGray, -90f, (pctB.coerceIn(0f, 100f) * 3.6f), false, topLeft = center - Offset(rB, rB), size = androidx.compose.ui.geometry.Size(rB * 2, rB * 2), style = Stroke(strokeB, cap = StrokeCap.Round))
+                drawArc(innerTrack, -90f, 360f, false, topLeft = center - Offset(rB, rB), size = androidx.compose.ui.geometry.Size(rB * 2, rB * 2), style = Stroke(strokeB, cap = StrokeCap.Round))
+                drawArc(ringGray, -90f, (pctB.coerceIn(0f, 100f) * 3.6f), false, topLeft = center - Offset(rB, rB), size = androidx.compose.ui.geometry.Size(rB * 2, rB * 2), style = Stroke(strokeB, cap = StrokeCap.Round))
             }
         }
         Box(
             Modifier.size(ringSize - 52.dp)
                 .shadow(6.dp, CircleShape)
-                .background(Brush.verticalGradient(listOf(Color.White, Color(0xFFE6EBF1))), CircleShape),
+                .background(Brush.verticalGradient(listOf(NeuColors.KnobTop, NeuColors.KnobBottom)), CircleShape),
             contentAlignment = Alignment.Center
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(centerText, fontSize = 21.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF5B6479))
+                Text(centerText, fontSize = 21.sp, fontWeight = FontWeight.SemiBold, color = NeuColors.RingCenterText)
                 Text(centerSub, fontSize = 10.sp, color = NeuColors.Muted)
             }
         }
@@ -195,7 +201,7 @@ fun ProfileRow(
 @Composable
 fun NeuChip(text: String, selected: Boolean, enabled: Boolean = true, onClick: (() -> Unit)? = null) {
     val bg = if (selected) Brush.linearGradient(listOf(NeuColors.Blue1, NeuColors.Blue2))
-    else Brush.verticalGradient(listOf(Color.White, Color(0xFFE6EBF1)))
+    else Brush.verticalGradient(listOf(NeuColors.ChipOffTop, NeuColors.ChipOffBottom))
     Box(
         Modifier
             .shadow(if (selected) 6.dp else 4.dp, RoundedCornerShape(99.dp))
@@ -239,7 +245,7 @@ fun NeuButton(text: String, primary: Boolean = false, enabled: Boolean = true, m
             .height(48.dp)
             .shadow(if (primary) 10.dp else 6.dp, RoundedCornerShape(99.dp))
             .background(bg, RoundedCornerShape(99.dp))
-            .then(if (!primary) Modifier.border(1.5.dp, Color(0xB3FFFFFF), RoundedCornerShape(99.dp)) else Modifier)
+            .then(if (!primary) Modifier.border(1.5.dp, NeuColors.ButtonBorder, RoundedCornerShape(99.dp)) else Modifier)
             .clickable(enabled = enabled) { onClick() }
             .padding(horizontal = 24.dp),
         contentAlignment = Alignment.Center

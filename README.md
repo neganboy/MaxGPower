@@ -14,6 +14,7 @@ App con root para el **Poco F8 Pro (Snapdragon 8 Elite)** con los perfiles manua
 - **I/O, memoria y scheduler por perfil (v1.5):** lectura anticipada, peticiones y presión de caché según el perfil; ajustes del scheduler al arrancar
 - **Red TCP (v1.5):** mejor algoritmo disponible (bbr3/bbr2/bbrplus/bbr/…), sack y baja latencia, con interruptor propio
 - Sonda de diagnóstico, detector de conflictos y modo seguro
+- **Modo noche (v1.10):** sigue el modo oscuro del teléfono; en la pestaña Auto se puede fijar claro u oscuro a mano
 - Interfaz nativa (Jetpack Compose + Material 3). Nada de WebView.
 
 ## Requisitos

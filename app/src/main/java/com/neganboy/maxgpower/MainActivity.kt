@@ -1,6 +1,7 @@
 package com.neganboy.maxgpower
 
 import android.Manifest
+import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -13,6 +14,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -38,6 +40,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -48,12 +51,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import com.neganboy.maxgpower.ui.AutoScreen
 import com.neganboy.maxgpower.ui.GpuScreen
 import com.neganboy.maxgpower.ui.HomeScreen
@@ -68,8 +73,8 @@ import kotlinx.coroutines.withContext
 
 /**
  * MaxG Power — interfaz NATIVA (Jetpack Compose + Material 3) con el
- * DISEÑO de la WebUI del módulo: tema claro neumórfico, cabecera con
- * píldora de conexión y navegación superior de 5 pestañas
+ * DISEÑO de la WebUI del módulo: tema neumórfico (claro y oscuro),
+ * cabecera con píldora de conexión y navegación superior de 5 pestañas
  * (Perfiles, Manual, GPU, Mando, Auto). Nada de WebView.
  */
 class MainActivity : ComponentActivity() {
@@ -78,6 +83,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        vm.loadThemeMode(this)
         setContent { MaxGApp() }
         askNotificationPermission()
     }
@@ -97,6 +103,24 @@ class MainActivity : ComponentActivity() {
         var logText by remember { mutableStateOf<String?>(null) }
         var showRevert by remember { mutableStateOf(false) }
 
+        // Modo noche: sigue al sistema, salvo que se fije a mano en la pestaña Auto.
+        val themeMode by vm.themeMode.collectAsState()
+        val systemDark = isSystemInDarkTheme()
+        val dark = when (themeMode) {
+            ThemeMode.LIGHT -> false
+            ThemeMode.DARK -> true
+            ThemeMode.SYSTEM -> systemDark
+        }
+
+        // Barra de estado transparente, con los iconos claros u oscuros según el tema.
+        val activity = LocalContext.current as? Activity
+        SideEffect {
+            activity?.window?.let { w ->
+                w.statusBarColor = android.graphics.Color.TRANSPARENT
+                WindowInsetsControllerCompat(w, w.decorView).isAppearanceLightStatusBars = !dark
+            }
+        }
+
         LaunchedEffect(Unit) {
             prepare(
                 onNoRoot = { showNoRoot = true },
@@ -112,7 +136,7 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        MaxGTheme {
+        MaxGTheme(dark = dark) {
             Scaffold(
                 containerColor = NeuColors.Bg,
                 snackbarHost = { SnackbarHost(snackbarHostState) }
@@ -135,7 +159,7 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                             Text(
-                                "v1.9 · por Neganboy · hecho para tu Poco F8 Pro",
+                                "v1.10 · por Neganboy · hecho para tu Poco F8 Pro",
                                 fontSize = 12.sp, color = NeuColors.Muted, modifier = Modifier.padding(top = 2.dp)
                             )
                         }
@@ -181,7 +205,7 @@ class MainActivity : ComponentActivity() {
                                     .shadow(if (selected) 6.dp else 0.dp, RoundedCornerShape(26.dp))
                                     .then(
                                         if (selected) Modifier.background(
-                                            Brush.verticalGradient(listOf(Color.White, Color(0xFFEEF2F7))),
+                                            Brush.verticalGradient(listOf(NeuColors.NavTop, NeuColors.NavBottom)),
                                             RoundedCornerShape(26.dp)
                                         ) else Modifier
                                     )

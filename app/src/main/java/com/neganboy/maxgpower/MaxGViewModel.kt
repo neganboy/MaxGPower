@@ -1,5 +1,6 @@
 package com.neganboy.maxgpower
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
@@ -11,6 +12,9 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/** Modo noche: sigue al sistema, o claro/oscuro fijado a mano (se guarda en "maxg"). */
+enum class ThemeMode { SYSTEM, LIGHT, DARK }
+
 /**
  * Estado de la app: carga `state full` al abrir, luego sondea `state live`
  * + `info` cada 3 s (temperaturas, batería, frecuencias) y `state more`
@@ -20,6 +24,32 @@ class MaxGViewModel : ViewModel() {
 
     private val _state = MutableStateFlow(MaxGState())
     val state: StateFlow<MaxGState> = _state.asStateFlow()
+
+    /** Modo noche elegido (por defecto sigue al sistema). */
+    private val _themeMode = MutableStateFlow(ThemeMode.SYSTEM)
+    val themeMode: StateFlow<ThemeMode> = _themeMode.asStateFlow()
+
+    /** Lee el modo noche guardado (llamar antes de mostrar la interfaz). */
+    fun loadThemeMode(context: Context) {
+        val saved = context.getSharedPreferences("maxg", Context.MODE_PRIVATE)
+            .getString("theme_mode", "system")
+        _themeMode.value = when (saved) {
+            "light" -> ThemeMode.LIGHT
+            "dark" -> ThemeMode.DARK
+            else -> ThemeMode.SYSTEM
+        }
+    }
+
+    /** Guarda el modo noche elegido. */
+    fun setThemeMode(context: Context, mode: ThemeMode) {
+        _themeMode.value = mode
+        context.getSharedPreferences("maxg", Context.MODE_PRIVATE).edit()
+            .putString("theme_mode", when (mode) {
+                ThemeMode.LIGHT -> "light"
+                ThemeMode.DARK -> "dark"
+                else -> "system"
+            }).apply()
+    }
 
     private val _loading = MutableStateFlow(true)
     val loading: StateFlow<Boolean> = _loading.asStateFlow()
