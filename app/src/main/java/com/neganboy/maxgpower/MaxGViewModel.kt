@@ -211,14 +211,15 @@ class MaxGViewModel : ViewModel() {
     }
 
     /** Revisa en GitHub si hay una versión más nueva que la instalada. */
-    fun checkUpdates(context: Context) {
+    fun checkUpdates(context: Context, silent: Boolean = false) {
         if (_update.value is UpdateUiState.Checking) return
         viewModelScope.launch {
             _update.value = UpdateUiState.Checking
             when (val r = AppUpdater.checkLatest(context.applicationContext)) {
                 is AppUpdater.CheckResult.Available -> _update.value = UpdateUiState.Available(r.release)
                 is AppUpdater.CheckResult.UpToDate -> _update.value = UpdateUiState.UpToDate(AppUpdater.installedVersion(context))
-                is AppUpdater.CheckResult.Error -> _update.value = UpdateUiState.Error(r.message)
+                // La revisión automática no deja el error en rojo al abrir: solo se muestra si el usuario buscó a mano.
+                is AppUpdater.CheckResult.Error -> _update.value = if (silent) UpdateUiState.Idle else UpdateUiState.Error(r.message)
             }
         }
     }
@@ -229,7 +230,7 @@ class MaxGViewModel : ViewModel() {
         val last = prefs.getLong("update_last_check", 0)
         if (System.currentTimeMillis() - last < 24 * 60 * 60 * 1000L) return
         prefs.edit().putLong("update_last_check", System.currentTimeMillis()).apply()
-        checkUpdates(context)
+        checkUpdates(context, silent = true)
     }
 
     /** Descarga la APK del release disponible (verifica paquete y firma antes de avisar que está lista). */

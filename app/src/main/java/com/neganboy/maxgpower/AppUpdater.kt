@@ -19,11 +19,13 @@ import java.net.URL
 import java.security.MessageDigest
 
 /**
- * Actualizaciones desde GitHub Releases, sin Play Store.
+ * Actualizaciones desde GitHub Releases.
  *
  *   1. Revisar: la API pública de GitHub dice cuál es el último release
  *      (versión, cambios y enlace de la APK). El repo es público: no hace
  *      falta cuenta ni token (60 consultas por hora sin autenticar).
+ *      Si la API no conecta, hay un respaldo: la página de releases
+ *      redirige a la última versión y de ahí sale el enlace de descarga.
  *   2. Descargar: la APK baja a la caché de la app, con progreso.
  *   3. Verificar: la APK tiene que ser de MaxG Power y estar firmada con
  *      la misma llave que la app instalada. El instalador de Android
@@ -70,38 +72,79 @@ object AppUpdater {
 
     /** Lee el último release de GitHub y dice si hay una versión más nueva que la instalada. */
     suspend fun checkLatest(context: Context): CheckResult = withContext(Dispatchers.IO) {
+        val apiError = try {
+            return@withContext checkViaApi(context)
+        } catch (e: Exception) {
+            e
+        }
+        // La API no conectó: segundo intento por la página de releases
+        // (otro servidor, sin límite de consultas): redirige a la última versión.
         try {
-            val json = JSONObject(get(API_LATEST))
-            val tag = json.optString("tag_name", "").trim().removePrefix("v")
-            if (tag.isEmpty()) return@withContext CheckResult.Error("GitHub no devolvió versión")
-            val current = installedVersion(context)
-            if (compareVersions(tag, current) <= 0) return@withContext CheckResult.UpToDate
-            val assets = json.optJSONArray("assets")
-            var apkUrl = ""
-            var apkName = "MaxGPower.apk"
-            var size = 0L
-            if (assets != null) {
-                for (i in 0 until assets.length()) {
-                    val a = assets.getJSONObject(i)
-                    if (a.optString("name", "").endsWith(".apk", ignoreCase = true)) {
-                        apkUrl = a.optString("browser_download_url", "")
-                        apkName = a.optString("name", apkName)
-                        size = a.optLong("size", 0)
-                        break
-                    }
+            return@withContext checkViaRedirect(context)
+        } catch (e: Exception) {
+            return@withContext CheckResult.Error(
+                "Sin conexión a GitHub: ${describe(apiError)} (el respaldo tampoco conectó: ${describe(e)})"
+            )
+        }
+    }
+
+    /** Qué pasó, en palabras simples, para mostrarlo si la revisión falla. */
+    private fun describe(e: Exception): String = when (e) {
+        is java.net.UnknownHostException -> "no se encontró el servidor"
+        is java.net.ConnectException -> "no se pudo conectar"
+        is java.net.SocketTimeoutException -> "tardó demasiado en responder"
+        is javax.net.ssl.SSLException -> "problema de seguridad con la conexión"
+        is IOException -> e.message ?: "error de red"
+        else -> e.message ?: "error desconocido"
+    }
+
+    /** Revisión por la API pública de GitHub (trae versión, cambios y enlace de la APK). */
+    private fun checkViaApi(context: Context): CheckResult {
+        val json = JSONObject(get(API_LATEST))
+        val tag = json.optString("tag_name", "").trim().removePrefix("v")
+        if (tag.isEmpty()) throw IOException("GitHub no devolvió versión")
+        val current = installedVersion(context)
+        if (compareVersions(tag, current) <= 0) return CheckResult.UpToDate
+        val assets = json.optJSONArray("assets")
+        var apkUrl = ""
+        var apkName = "MaxGPower.apk"
+        var size = 0L
+        if (assets != null) {
+            for (i in 0 until assets.length()) {
+                val a = assets.getJSONObject(i)
+                if (a.optString("name", "").endsWith(".apk", ignoreCase = true)) {
+                    apkUrl = a.optString("browser_download_url", "")
+                    apkName = a.optString("name", apkName)
+                    size = a.optLong("size", 0)
+                    break
                 }
             }
-            if (apkUrl.isEmpty()) return@withContext CheckResult.Error("El release $tag no trae APK")
-            CheckResult.Available(ReleaseInfo(tag, json.optString("body", ""), apkUrl, apkName, size))
-        } catch (e: Exception) {
-            CheckResult.Error(
-                when {
-                    e is java.net.UnknownHostException || e is java.net.ConnectException -> "Sin conexión a internet"
-                    e.message?.contains("404") == true -> "Todavía no hay releases publicados"
-                    e.message?.contains("403") == true -> "GitHub no deja consultar ahora (límite de consultas)"
-                    else -> "No se pudo revisar: ${e.message ?: "error"}"
-                }
-            )
+        }
+        if (apkUrl.isEmpty()) throw IOException("El release $tag no trae APK")
+        return CheckResult.Available(ReleaseInfo(tag, json.optString("body", ""), apkUrl, apkName, size))
+    }
+
+    /** Respaldo: la página de releases redirige a la última versión; el enlace de la APK se arma con el nombre que siempre se publica. */
+    private fun checkViaRedirect(context: Context): CheckResult {
+        val conn = (URL("https://github.com/$REPO/releases/latest").openConnection() as HttpURLConnection).apply {
+            connectTimeout = 15000
+            readTimeout = 15000
+            setRequestProperty("User-Agent", "MaxGPower")
+            instanceFollowRedirects = false
+        }
+        try {
+            val code = conn.responseCode
+            if (code !in 300..399) throw IOException("GitHub respondió $code")
+            val loc = conn.getHeaderField("Location") ?: throw IOException("sin redirección")
+            val tag = loc.substringAfterLast("/tag/", "").trim().removePrefix("v")
+            if (tag.isEmpty()) throw IOException("no se leyó la versión")
+            val current = installedVersion(context)
+            if (compareVersions(tag, current) <= 0) return CheckResult.UpToDate
+            val apkName = "MaxGPower-v$tag.apk"
+            val apkUrl = "https://github.com/$REPO/releases/download/v$tag/$apkName"
+            return CheckResult.Available(ReleaseInfo(tag, "", apkUrl, apkName, 0))
+        } finally {
+            conn.disconnect()
         }
     }
 

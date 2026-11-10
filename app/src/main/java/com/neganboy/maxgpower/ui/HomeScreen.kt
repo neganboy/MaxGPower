@@ -143,12 +143,12 @@ fun HomeScreen(vm: MaxGViewModel, state: MaxGState) {
             }
         }
 
-        // Actualizaciones desde GitHub (sin Play Store)
+        // Actualizaciones desde GitHub
         item {
             val context = LocalContext.current
             NeuCard(Modifier.padding(top = 20.dp)) {
                 SectionTitle("Actualizaciones")
-                SectionSub("Revisa GitHub y descarga la versión nueva sin pasar por la Play Store. La instalación la confirmas tú en el instalador de Android.")
+                SectionSub("Revisa GitHub y descarga la versión nueva directo en tu teléfono. La instalación la confirmas tú en el instalador de Android.")
                 Spacer(Modifier.height(10.dp))
                 when (val u = updateState) {
                     is UpdateUiState.Idle -> {
