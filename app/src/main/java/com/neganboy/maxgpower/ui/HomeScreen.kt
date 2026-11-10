@@ -51,6 +51,8 @@ fun HomeScreen(vm: MaxGViewModel, state: MaxGState) {
     var includedOpen by remember { mutableStateOf(false) }
     var bgPkg by remember { mutableStateOf("") }
     val updateState by vm.update.collectAsState()
+    val diag by vm.diag.collectAsState()
+    val diagBusy by vm.diagBusy.collectAsState()
 
     val maxPlan = state.plans["maximo"]
     val maxPrime = maxPlan?.prime ?: 4320000
@@ -204,7 +206,19 @@ fun HomeScreen(vm: MaxGViewModel, state: MaxGState) {
                     is UpdateUiState.Error -> {
                         Text(u.message, fontSize = 13.sp, color = NeuColors.Bad)
                         Spacer(Modifier.height(10.dp))
-                        NeuButton("Reintentar") { vm.checkUpdates(context) }
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            NeuButton("Reintentar") { vm.checkUpdates(context) }
+                            NeuButton(if (diagBusy) "Probando…" else "Probar conexión") { vm.runDiag(context) }
+                        }
+                        diag?.let { d ->
+                            Spacer(Modifier.height(12.dp))
+                            Text("Prueba de conexión:", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = NeuColors.Text)
+                            Spacer(Modifier.height(4.dp))
+                            Text("Red: ${d.network} · internet validado: ${if (d.internetValidated) "sí" else "no"}", fontSize = 12.5.sp, color = NeuColors.Muted)
+                            Text("github.com → ${d.dnsGithub}", fontSize = 12.5.sp, color = NeuColors.Muted)
+                            Text("api.github.com → ${d.dnsApi}", fontSize = 12.5.sp, color = NeuColors.Muted)
+                            Text("Página de GitHub: ${d.httpGithub}", fontSize = 12.5.sp, color = NeuColors.Muted)
+                        }
                     }
                 }
             }

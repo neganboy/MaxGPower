@@ -4,6 +4,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
@@ -15,6 +17,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 import java.net.HttpURLConnection
+import java.net.InetAddress
 import java.net.URL
 import java.security.MessageDigest
 
@@ -238,6 +241,50 @@ object AppUpdater {
         } else {
             true
         }
+
+    /** Resultado de la prueba de conexión: qué red hay, si Android la valida, si los nombres de GitHub resuelven y si la página responde. */
+    data class NetDiag(
+        val network: String,
+        val internetValidated: Boolean,
+        val dnsGithub: String,
+        val dnsApi: String,
+        val httpGithub: String
+    )
+
+    /** Prueba la conexión paso a paso, para saber si el problema es la red, el DNS o GitHub. */
+    suspend fun diagnose(context: Context): NetDiag = withContext(Dispatchers.IO) {
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val net = cm.activeNetwork
+        val caps = net?.let { cm.getNetworkCapabilities(it) }
+        val network = when {
+            net == null -> "Sin red"
+            caps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true -> "Wi-Fi"
+            caps?.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) == true -> "Datos móviles"
+            else -> "Otra red"
+        }
+        val validated = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true
+        fun resolve(host: String): String = try {
+            InetAddress.getByName(host).hostAddress ?: "?"
+        } catch (e: Exception) {
+            "no resolvió (${e.javaClass.simpleName})"
+        }
+        val http = try {
+            val conn = (URL("https://github.com").openConnection() as HttpURLConnection).apply {
+                connectTimeout = 10000
+                readTimeout = 10000
+                setRequestProperty("User-Agent", "MaxGPower")
+                instanceFollowRedirects = true
+            }
+            try {
+                "HTTP ${conn.responseCode}"
+            } finally {
+                conn.disconnect()
+            }
+        } catch (e: Exception) {
+            "falló: ${describe(e)}"
+        }
+        NetDiag(network, validated, resolve("github.com"), resolve("api.github.com"), http)
+    }
 
     fun unknownSourcesIntent(context: Context): Intent =
         Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES)

@@ -37,6 +37,21 @@ class MaxGViewModel : ViewModel() {
     private val _update = MutableStateFlow<UpdateUiState>(UpdateUiState.Idle)
     val update: StateFlow<UpdateUiState> = _update.asStateFlow()
 
+    /** Resultado de la última prueba de conexión (para saber por qué no conecta a GitHub). */
+    private val _diag = MutableStateFlow<AppUpdater.NetDiag?>(null)
+    val diag: StateFlow<AppUpdater.NetDiag?> = _diag.asStateFlow()
+    private val _diagBusy = MutableStateFlow(false)
+    val diagBusy: StateFlow<Boolean> = _diagBusy.asStateFlow()
+
+    /** Prueba la conexión paso a paso (red, DNS, página de GitHub). */
+    fun runDiag(context: Context) {
+        viewModelScope.launch {
+            _diagBusy.value = true
+            _diag.value = AppUpdater.diagnose(context.applicationContext)
+            _diagBusy.value = false
+        }
+    }
+
     private val _loading = MutableStateFlow(true)
     val loading: StateFlow<Boolean> = _loading.asStateFlow()
 
@@ -219,7 +234,11 @@ class MaxGViewModel : ViewModel() {
                 is AppUpdater.CheckResult.Available -> _update.value = UpdateUiState.Available(r.release)
                 is AppUpdater.CheckResult.UpToDate -> _update.value = UpdateUiState.UpToDate(AppUpdater.installedVersion(context))
                 // La revisión automática no deja el error en rojo al abrir: solo se muestra si el usuario buscó a mano.
-                is AppUpdater.CheckResult.Error -> _update.value = if (silent) UpdateUiState.Idle else UpdateUiState.Error(r.message)
+                is AppUpdater.CheckResult.Error -> {
+                    _update.value = if (silent) UpdateUiState.Idle else UpdateUiState.Error(r.message)
+                    // Si falló, prueba la conexión sola para mostrar el motivo exacto.
+                    if (!silent) runDiag(context)
+                }
             }
         }
     }
