@@ -1,11 +1,21 @@
 # MaxG Power
 
-App con root para el Poco F8 Pro (Snapdragon 8 Elite) con los perfiles manuales de energía y rendimiento y el modo mando de baja latencia del módulo MaxG Power, ahora con interfaz nativa de Android.
+App con root para el **Poco F8 Pro (Snapdragon 8 Elite)** con los perfiles manuales de energía y rendimiento y el modo mando de baja latencia del módulo MaxG Power, ahora con interfaz nativa de Android.
+
+> ⚠️ **Solo para el Poco F8 Pro (annibale). No es para ningún otro modelo**, aunque podría funcionar en otros teléfonos con el mismo chip, sin ninguna garantía.
+>
+> ⚠️ **Para ROMs AOSP.** Probado en AOSP con Android 16 (kernel 6.6.77). En otros modelos la app se instala, pero los perfiles **no se aplican**: la comprobación del dispositivo los bloquea.
 
 - 12 perfiles: mínimo, ultra, profundo, ahorro, batería, eco, juego, medio, diario, rendfresco, alto y máximo
 - Gobernador de CPU, control manual, GPU (modo, tope, piso), control de calor, modo inteligente (Auto) y modo mando
 - Sonda de diagnóstico, detector de conflictos y modo seguro
 - Interfaz nativa (Jetpack Compose + Material 3). Nada de WebView.
+
+## Requisitos
+
+- **Poco F8 Pro (annibale)** con **ROM AOSP** (probado en Android 16)
+- Root con **KernelSU Next**
+- Android 8 o superior
 
 ## Instalación
 
