@@ -30,7 +30,8 @@ fi
 lock_free
 grep -q '^heat_mode=' "$CONF/cfg" 2>/dev/null || cfg_set heat_mode suave   # primera vez: control de calor suave por defecto
 { [ "$(cfg_get heat_mode off)" != off ] || [ "$(cfg_get burst off)" != off ]; } && heatd_start && log "arranque: control de calor activo"
-tune_apply_all; btg_apply; btprio_boot
+tune_apply_all; sched_apply; btg_apply; btprio_boot
+[ "$(cfg_get watch 1)" = 1 ] && watchd_start && log "arranque: vigilante de topes activo"
 [ "$(cfg_get auto 1)" = 1 ] && autod_start && log "arranque: modo inteligente activo"
 { [ "$(cfg_get gpu_floor 0)" != 0 ] || [ "$(cfg_get gpu_free 0)" = 1 ]; } && gpud_start && log "arranque: vigilante de GPU activo"
 [ "$(cfg_get pad 0)" = 1 ] && padd_start && log "arranque: modo mando activo"
@@ -47,6 +48,7 @@ while :; do
   sv_n=$((sv_n+1)); [ $((sv_n % 4)) -eq 1 ] && cx_cache_refresh   # otros módulos y ahorro de batería de Android: se miran cada ~3 min para avisar de choques sin frenar a la app
   if [ "${CF_auto:-1}" = 1 ] && [ ! -e "$CONF/autod.stop" ] && ! autod_alive; then log "supervisor: el vigilante automático se había detenido, se reinicia"; autod_start; fi
   if { [ "${CF_heat_mode:-off}" != off ] || [ "${CF_burst:-off}" != off ]; } && [ ! -e "$CONF/heatd.stop" ] && ! heatd_alive; then log "supervisor: el vigilante de calor se había detenido, se reinicia"; heatd_start; fi
+  if [ "${CF_watch:-1}" = 1 ] && [ ! -e "$CONF/watchd.stop" ] && ! watchd_alive; then log "supervisor: el vigilante de topes se había detenido, se reinicia"; watchd_start; fi
   if [ "${CF_pad:-0}" = 1 ] && [ ! -e "$CONF/padd.stop" ] && ! padd_alive; then log "supervisor: el vigilante del mando se había detenido, se reinicia"; padd_start; fi
   if { [ "${CF_gpu_floor:-0}" != 0 ] || [ "${CF_gpu_free:-0}" = 1 ]; } && [ ! -e "$CONF/gpud.stop" ] && ! gpud_alive; then log "supervisor: el vigilante de GPU se había detenido, se reinicia"; gpud_start; fi
 done

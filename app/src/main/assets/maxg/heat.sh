@@ -21,6 +21,49 @@ heat_level() {   # bat cpu carcasa margen_bat margen_cpu margen_carcasa -> HL: 0
   elif [ "$1" -ge $((HT_bw-$4)) ] || [ "$2" -ge $((HT_cw-$5)) ] || { [ "$3" -gt 0 ] && [ "$3" -ge $((HT_sw-$6)) ]; }; then HL=1
   else HL=0; fi
 }
+
+# ---- guardián de 7 niveles (modo "guardian"): lazo cerrado sobre la temperatura objetivo del perfil ----
+# Nivel 0 = sin recorte. El 1 entra 2 °C antes del objetivo, el 3 justo en el objetivo y el 6 a +3 °C.
+# El nivel sube en cuanto se cruza un umbral y baja recién 0,5 °C por debajo, para no oscilar entre dos niveles.
+# Manda el sensor más caliente: la batería, o la carcasa con 3 °C de margen (se siente antes que la batería).
+# El chip pone un piso de nivel (85 °C -> 1, 95 °C -> 2) aunque la batería siga fría: el chip sube en segundos, la batería en minutos.
+# Con la pantalla apagada el nivel no baja de 4 (si el ahorro de pantalla está encendido).
+GUARD_LVL_CPU="100 92 85 78 70 62 52"
+GUARD_LVL_GPU="100 90 80 70 60 50 40"
+GUARD_MAX=6
+GUARD_SKIN_OFF=30
+GUARD_CHIP1=850
+GUARD_CHIP2=950
+guard_target() {   # perfil -> GT: objetivo en °C (30-45); por defecto 35 en diario y 40 en juego y rendimiento
+  case "$1" in juego|rendfresco|alto|maximo) GT=40 ;; *) GT=35 ;; esac
+  cfg_v "heat_tgt_$1" "$GT"; isnum "$CV" && [ "$CV" -ge 30 ] && [ "$CV" -le 45 ] && GT=$CV
+  return 0
+}
+guard_target_set() {   # perfil temp -> valida y guarda el objetivo de ese perfil
+  case "$1" in minimo|ultra|profundo|ahorro|bateria|eco|juego|medio|diario|rendfresco|alto|maximo|u_*) ;; *) K_ERR="perfil desconocido"; return 1 ;; esac
+  isnum "$2" && [ "$2" -ge 30 ] && [ "$2" -le 45 ] || { K_ERR="objetivo entre 30 y 45 °C"; return 1; }
+  cfg_set "heat_tgt_$1" "$2"; log "calor: objetivo de $1 a $2 °C"; return 0
+}
+guard_targets() {   # TGT|perfil|objetivo para los 12 perfiles (y los propios, si los hay)
+  for _p in $BUILTIN $(custom_ids); do guard_target "$_p"; echo "TGT|$_p|$GT"; done
+}
+guard_level() {   # temp_décimas objetivo_°C nivel_actual -> GL (con histéresis de 0,5 °C al bajar)
+  gl_d=$(($1 - $2 * 10)); GL=$3
+  gl_up=0; [ "$gl_d" -ge -30 ] && gl_up=$(((gl_d + 30) / 10))
+  gl_dn=0; [ "$gl_d" -ge -35 ] && gl_dn=$(((gl_d + 35) / 10))
+  [ "$gl_up" -gt "$GUARD_MAX" ] && gl_up=$GUARD_MAX
+  [ "$gl_dn" -gt "$GUARD_MAX" ] && gl_dn=$GUARD_MAX
+  if [ "$gl_up" -gt "$GL" ]; then GL=$gl_up
+  elif [ "$gl_dn" -lt "$GL" ]; then GL=$gl_dn; fi
+  return 0
+}
+guard_pct() {   # nivel -> GC (puntos de CPU) y GG (puntos de GPU) que se restan de lo que pide el perfil
+  _i=0; GC=0; GG=0
+  for _c in $GUARD_LVL_CPU; do [ "$_i" = "$1" ] && GC=$((100-_c)); _i=$((_i+1)); done
+  _i=0
+  for _g in $GUARD_LVL_GPU; do [ "$_i" = "$1" ] && GG=$((100-_g)); _i=$((_i+1)); done
+  return 0
+}
 caps_restore() {   # devuelve los topes de CPU y GPU a lo que tenía la ROM
   [ -s "$ORIG" ] || return 0
   while IFS="$TAB" read -r _n _v; do
@@ -52,6 +95,7 @@ heat_dif() { hd_x=$(( $1 - $2 )); [ "$hd_x" -lt 0 ] && hd_x=$((0-hd_x)); return 
 heatd_alive() { _d=""; [ -r "$HEATPID" ] && read -r _d < "$HEATPID"; [ -n "$_d" ] && kill -0 "$_d" 2>/dev/null; }
 heatd_run() {
   echo $$ > "$HEATPID"; rm -f "$CONF/heatd.stop"; hd_L=0; hd_calm=0; hd_off=0; hd_cur=0; hd_curg=0; hd_lk=""; hd_wt=0; hd_lc=0; hd_lb=0; hd_ls=0
+  hd_cf=0; hd_tgt=35; hd_src=bateria
   hd_an=0; hd_ancalm=0; hd_bn=0; hd_bx=0; hd_bcalm=0; hd_xk=""; hd_tk=${MG_HEATTICK:-5}
   hd_fp=$(policies | head -n 1); hd_lp=""; for hd_x in $(policies); do hd_lp=$hd_x; done   # hd_lp = el último clúster (el prime): el que más calienta
   cpu_temp10_v; hd_t1=$CT10; hd_t2=$CT10; hd_t3=$CT10
@@ -62,21 +106,41 @@ heatd_run() {
     hd_m=${CF_heat_mode:-off}; hd_bm=${CF_burst:-off}
     if [ "$hd_m" = off ]; then
       [ "$hd_bm" = off ] && { sleep 5; break; }   # ni calor ni ráfaga: nada que vigilar
-    else heat_def "$hd_m" || { sleep 5; continue; }; fi
+    elif [ "$hd_m" != guardian ]; then heat_def "$hd_m" || { sleep 5; continue; }; fi
     bat_temp10_v; hd_b=$BT10; cpu_temp10_v; hd_c=$CT10; skin_temp10_v; hd_k=$SK10
-    if [ "$hd_m" != off ]; then
+    if [ "$hd_m" = guardian ]; then
+      hd_prof=$(eff_profile); guard_target "$hd_prof"; hd_tgt=$GT
+      hd_e=$hd_b; hd_src=bateria
+      if [ "$hd_k" -gt 0 ] && [ $((hd_k - GUARD_SKIN_OFF)) -gt "$hd_e" ]; then hd_e=$((hd_k - GUARD_SKIN_OFF)); hd_src=carcasa; fi
+      guard_level "$hd_e" "$hd_tgt" "$hd_L"; hd_L=$GL
+      # chip muy caliente: piso de nivel 1 o 2 (se suelta 5 °C más abajo)
+      if [ "$hd_c" -ge "$GUARD_CHIP2" ]; then hd_cf=2
+      elif [ "$hd_c" -ge "$GUARD_CHIP1" ]; then
+        [ "$hd_cf" -lt 1 ] && hd_cf=1
+        [ "$hd_cf" = 2 ] && [ "$hd_c" -lt $((GUARD_CHIP2 - 50)) ] && hd_cf=1
+      elif [ "$hd_c" -lt $((GUARD_CHIP1 - 50)) ]; then hd_cf=0
+      elif [ "$hd_cf" = 2 ]; then hd_cf=1
+      fi
+      if [ "$hd_cf" -gt "$hd_L" ]; then hd_L=$hd_cf; hd_src=chip; fi
+      # pantalla apagada (opcional): el nivel no baja de 4
+      if [ "${CF_heat_screen:-0}" = 1 ] && screen_off; then hd_off=$((hd_off+1)); else hd_off=0; fi
+      if [ "$hd_off" -ge 2 ] && [ "$hd_L" -lt 4 ]; then hd_L=4; hd_src=pantalla; fi
+      guard_pct "$hd_L"; hd_want=$GC; hd_wantg=$GG; hd_ap=4
+    elif [ "$hd_m" != off ]; then
       heat_level "$hd_b" "$hd_c" "$hd_k" 0 0 0; hd_up=$HL
       heat_level "$hd_b" "$hd_c" "$hd_k" 20 50 20; hd_dn=$HL
       if [ "$hd_up" -gt "$hd_L" ]; then hd_L=$hd_up; hd_calm=0
       elif [ "$hd_dn" -lt "$hd_L" ]; then hd_calm=$((hd_calm+1)); if [ "$hd_calm" -ge 2 ]; then hd_L=$hd_dn; hd_calm=0; fi
       else hd_calm=0; fi
       case "$hd_L" in 1) hd_want=$HT_dw ;; 2) hd_want=$HT_dh ;; *) hd_want=0 ;; esac
+      hd_wantg=$hd_want; hd_ap=$((HT_dw/2))
       if [ "${CF_heat_screen:-0}" = 1 ] && screen_off; then hd_off=$((hd_off+1)); else hd_off=0; fi
       [ "$hd_off" -ge 2 ] && [ "$hd_want" -lt 35 ] && hd_want=35
-    else hd_L=0; hd_calm=0; hd_want=0; hd_off=0; fi
+    else hd_L=0; hd_calm=0; hd_want=0; hd_wantg=0; hd_off=0; fi
     # ---- anticipación: si la CPU sube rápido y ya está cerca de «tibio», se baja un poco ANTES de llegar (menos subidas y bajadas bruscas) ----
+    # En modo guardián no hace falta: el piso del chip ya se adelanta al calor.
     hd_sl=$((hd_c - hd_t3)); hd_t3=$hd_t2; hd_t2=$hd_t1; hd_t1=$hd_c
-    if [ "$hd_m" != off ] && [ "${CF_heat_ant:-1}" = 1 ] && [ "$hd_L" = 0 ]; then
+    if [ "$hd_m" != off ] && [ "$hd_m" != guardian ] && [ "${CF_heat_ant:-1}" = 1 ] && [ "$hd_L" = 0 ]; then
       if [ "$hd_an" = 0 ]; then
         if [ "$hd_sl" -ge "${MG_ANTSL:-30}" ] && [ "$hd_c" -ge $((HT_cw-100)) ]; then hd_an=1; hd_ancalm=0; fi
       else
@@ -85,8 +149,8 @@ heatd_run() {
       fi
     else hd_an=0; fi
     hd_wc=$hd_want
-    [ "$hd_an" = 1 ] && [ $((HT_dw/2)) -gt "$hd_wc" ] && hd_wc=$((HT_dw/2))
-    hd_wg=$hd_wc
+    [ "$hd_an" = 1 ] && [ "$hd_ap" -gt "$hd_wc" ] && hd_wc=$hd_ap
+    hd_wg=$hd_wantg
     # ---- ráfaga sostenida: el prime puede ir a tope hasta N s; si sigue al tope más tiempo, el tope baja unos puntos (solo CPU) hasta que la carga afloje ----
     hd_bw=0
     case "$hd_bm" in 15|30|60)
@@ -107,7 +171,8 @@ heatd_run() {
     if [ "$hd_wc" != "$hd_cur" ] || [ "$hd_wg" != "$hd_curg" ]; then
       hd_tag=""; [ "$hd_an" = 1 ] && hd_tag=" [anticipación]"; [ "$hd_bx" = 1 ] && hd_tag="$hd_tag [ráfaga sostenida]"
       hd_cur=$hd_wc; hd_curg=$hd_wg; heat_apply "$hd_cur" "$hd_curg"
-      if [ "$hd_cur" = "$hd_curg" ]; then log "calor: nivel $hd_L, topes -$hd_cur % (batería $hd_b, cpu $hd_c, carcasa $hd_k)$hd_tag"
+      if [ "$hd_m" = guardian ]; then log "calor: guardián nivel $hd_L/6 (objetivo ${hd_tgt}°C, manda $hd_src), CPU -$hd_cur % GPU -$hd_curg % (batería $hd_b, cpu $hd_c, carcasa $hd_k)$hd_tag"
+      elif [ "$hd_cur" = "$hd_curg" ]; then log "calor: nivel $hd_L, topes -$hd_cur % (batería $hd_b, cpu $hd_c, carcasa $hd_k)$hd_tag"
       else log "calor: nivel $hd_L, CPU -$hd_cur % GPU -$hd_curg % (batería $hd_b, cpu $hd_c, carcasa $hd_k)$hd_tag"; fi
     elif [ "$hd_cur" -gt 0 ] && ! des_has "cpu_max_$hd_fp"; then
       hd_e=""; [ -r "$AUTOF" ] && read -r hd_e < "$AUTOF"; [ -n "$hd_e" ] || hd_e=${CF_profile:-stock}
@@ -140,19 +205,21 @@ heatd_stop() {
   _i=0; while [ "$_i" -lt 5 ] && heatd_alive; do sleep 1; _i=$((_i+1)); done
   rm -f "$HEATPID" "$CONF/heatd.stop" "$HEATST" "$HEATX"; echo 0 > "$HEATF"; heat_reapply
 }
-heat_set_mode() {   # off|suave|normal|estricto
+heat_set_mode() {   # off|suave|normal|estricto|guardian
   case "$1" in
     off) cfg_set heat_mode off; if [ "$(cfg_get burst off)" = off ]; then heatd_stop; else heatd_start; fi ;;
-    suave|normal|estricto) _w=$(is_target) || { K_ERR=$_w; return 1; }; cfg_set heat_mode "$1"; heatd_start || { K_ERR="no pude iniciar el vigilante de calor"; return 1; } ;;
+    suave|normal|estricto|guardian) _w=$(is_target) || { K_ERR=$_w; return 1; }; cfg_set heat_mode "$1"; heatd_start || { K_ERR="no pude iniciar el vigilante de calor"; return 1; } ;;
     *) K_ERR="modo de calor desconocido"; return 1 ;;
   esac
   return 0
 }
-heat_status() {   # HEAT|modo|nivel|puntos|cpu10|bat10|ahorro_pantalla|vivo|carcasa10
+heat_status() {   # HEAT|modo|nivel|puntos|cpu10|bat10|ahorro_pantalla|vivo|carcasa10|objetivo|maxnivel
   hs_l=0; hs_pt=0; hs_c=""; hs_b=""; hs_k=""
   [ -r "$HEATST" ] && IFS='|' read -r hs_l hs_pt hs_c hs_b hs_k < "$HEATST"
   if [ -z "$hs_c" ]; then cpu_temp10_v; hs_c=$CT10; bat_temp10_v; hs_b=$BT10; skin_temp10_v; hs_k=$SK10; hs_l=0; hs_pt=0; fi
-  echo "HEAT|$(cfg_get heat_mode off)|$hs_l|$hs_pt|$hs_c|$hs_b|$(cfg_get heat_screen 0)|$(heatd_alive && echo 1 || echo 0)|${hs_k:-0}"
+  hs_t=35; hs_ml=2
+  if [ "$(cfg_get heat_mode off)" = guardian ]; then hs_ml=6; _hp=$(eff_profile); guard_target "$_hp"; hs_t=$GT; fi
+  echo "HEAT|$(cfg_get heat_mode off)|$hs_l|$hs_pt|$hs_c|$hs_b|$(cfg_get heat_screen 0)|$(heatd_alive && echo 1 || echo 0)|${hs_k:-0}|$hs_t|$hs_ml"
 }
 heatx_set() {   # ant 0|1 · burst off|15|30|60
   K_ERR=""

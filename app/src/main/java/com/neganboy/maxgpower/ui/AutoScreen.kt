@@ -193,10 +193,11 @@ fun AutoScreen(vm: MaxGViewModel, state: MaxGState, onOpenLog: (String) -> Unit,
                 }
                 Spacer(Modifier.height(14.dp))
                 RuleRow("BBR (TCP)", null) {
-                    NeuSwitch(state.tune.bbr) {
-                        vm.runCommand("Ajustes") { CtlClient.tuneSet("bbr", if (!state.tune.bbr) "1" else "0") }
+                    NeuSwitch(state.tune.ccOn) {
+                        vm.runCommand("Ajustes") { CtlClient.tuneSet("cc", if (!state.tune.ccOn) "1" else "0") }
                     }
                 }
+                if (state.tune.cc.isNotEmpty()) Text("Algoritmo actual: ${state.tune.cc}", fontSize = 12.5.sp, color = NeuColors.Muted, modifier = Modifier.padding(top = 10.dp))
                 if (state.tune.ra.isNotEmpty()) Text("Read-ahead: ${state.tune.ra}", fontSize = 12.5.sp, color = NeuColors.Muted, modifier = Modifier.padding(top = 10.dp))
             }
         }

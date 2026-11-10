@@ -176,6 +176,8 @@ knob_path_v() {   # nodo del ajuste en KP (vacío si este kernel no lo tiene); d
     vm_vfs) KP="$R/proc/sys/vm/vfs_cache_pressure" ;;
     vm_pc) KP="$R/proc/sys/vm/page-cluster" ;;
     vm_ttl) KP="$R/sys/kernel/mm/lru_gen/min_ttl_ms" ;;
+    vm_si) KP="$R/proc/sys/vm/stat_interval" ;;
+    vm_cp) KP="$R/proc/sys/vm/compaction_proactiveness" ;;
     *) return 1 ;;
   esac
   return 0
@@ -188,6 +190,7 @@ knob_range_v() {
     walt_hl_*) KR="50 100" ;; walt_up_*|walt_down_*) KR="0 100000" ;;
     gpu_idle) KR="10 1000" ;; sched_cpl) KR="0 1" ;;
     vm_swap) KR="0 200" ;; vm_vfs) KR="10 500" ;; vm_pc) KR="0 3" ;; vm_ttl) KR="0 5000" ;;
+    vm_si) KR="0 300" ;; vm_cp) KR="0 100" ;;
   esac
   return 0
 }
@@ -285,7 +288,10 @@ set_knob() {
 }
 # Restaura todo a lo original y olvida lo deseado
 reset_all() {
-  rm -f "$CONF/auto.cur"; extras_revert; hz_restore; cfg_set gpu_mode auto; cfg_set gm_max 100; type gpu_off >/dev/null 2>&1 && gpu_off
+  rm -f "$CONF/auto.cur"; extras_revert; hz_restore
+  type io_profile_revert >/dev/null 2>&1 && io_profile_revert
+  type sched_revert >/dev/null 2>&1 && sched_revert
+  cfg_set gpu_mode auto; cfg_set gm_max 100; type gpu_off >/dev/null 2>&1 && gpu_off
   [ -s "$ORIG" ] || { : > "$DES"; cfg_set profile stock; cfg_set gov none; return 0; }
   _rest() {   # modo -> escribe los originales de ese grupo
     while IFS="$TAB" read -r _n _v; do
@@ -340,6 +346,9 @@ prof_def() {
     u_*) custom_load "$1" ;;
     *) return 1 ;;
   esac
+  # I/O y memoria por perfil: los de ahorro leen con más anticipación y
+  # sueltan la caché antes; los de rendimiento leen poco y la retienen.
+  if [ "$PD_cpl" = 1 ]; then PD_ra=128; PD_nr=64; PD_vfs=120; else PD_ra=32; PD_nr=32; PD_vfs=80; fi
 }
 BUILTIN="minimo ultra profundo ahorro bateria eco juego medio diario rendfresco alto maximo"
 
@@ -459,12 +468,19 @@ prof_set_u() {   # aplica los ajustes de un perfil (no cambia el perfil elegido)
   elif knob_des_v vm_swap; [ -n "$KD" ]; then   # el perfil anterior tocaba swappiness y este no: se devuelve el original
     knob_orig_v vm_swap; _so=$KO; knob_path_v vm_swap; [ -n "$_so" ] && echo "$_so" > "$KP" 2>/dev/null; des_del vm_swap; grep -v "^vm_swap$TAB" "$ORIG" > "$ORIG.t" 2>/dev/null; mv -f "$ORIG.t" "$ORIG" 2>/dev/null
   fi
+  io_profile_apply "$PD_ra" "$PD_nr" "$PD_vfs" || _fail=$((_fail+1))
   [ "$_fail" -eq 0 ]
 }
 
 
-# ---- extras permanentes (los que traía Annibale Tweaks): memoria y apps en segundo plano ----
+# ---- extras permanentes: memoria y apps en segundo plano ----
+# La lista vive en $CONF/bgapps, una app por línea: paquete|appops|bucket|doze
+#   appops = 1 quita la ejecución en segundo plano (RUN_ANY_IN_BACKGROUND ignore)
+#   bucket = 1 la pone en espera "rare" (casi no despierta)
+#   doze   = 1 la saca de la lista blanca de Doze
+# La primera vez se crea con la lista que ya se aplicaba.
 EXTRA=$CONF/extras.state
+BGAPPS=$CONF/bgapps
 pkg_has() { pm path "$1" >/dev/null 2>&1; }
 ex_has() { grep -q "^$1" "$EXTRA" 2>/dev/null; }
 ex_put() { echo "$1" >> "$EXTRA"; }
@@ -474,30 +490,71 @@ ex_bucket() {   # paquete -> pone bucket rare guardando el original la primera v
   if ! ex_has "bucket:$1:"; then ex_put "bucket:$1:$(bucket_name "$(am get-standby-bucket "$1" 2>/dev/null </dev/null | tr -dc '0-9')")"; fi
   am set-standby-bucket "$1" rare >/dev/null 2>&1 </dev/null
 }
+bgapps_defaults() {
+  [ -f "$BGAPPS" ] || printf '%s\n' "com.zhiliaoapp.musically|1|1|0" "com.claro.pe.miclaro|0|1|0" "com.brave.browser|0|0|1" > "$BGAPPS"
+}
+bgapps_apply_one() {   # paquete appops bucket doze: aplica lo que dice su línea
+  pkg_has "$1" || return 0
+  if [ "$2" = 1 ]; then ex_has "ops:$1" || ex_put "ops:$1"; cmd appops set "$1" RUN_ANY_IN_BACKGROUND ignore >/dev/null 2>&1 </dev/null; fi
+  [ "$3" = 1 ] && ex_bucket "$1"
+  if [ "$4" = 1 ]; then
+    dumpsys deviceidle whitelist 2>/dev/null </dev/null | grep -q "$1" && { ex_has "wl:$1" || ex_put "wl:$1"; dumpsys deviceidle whitelist -"$1" >/dev/null 2>&1 </dev/null; }
+  fi
+}
+bgapps_revert_one() {   # paquete: devuelve lo que se le quitó (el bucket lo devuelve extras_revert)
+  ex_has "ops:$1" && cmd appops set "$1" RUN_ANY_IN_BACKGROUND default >/dev/null 2>&1 </dev/null
+  ex_has "wl:$1" && dumpsys deviceidle whitelist +"$1" >/dev/null 2>&1 </dev/null
+}
+bgapps_add() {   # paquete [appops bucket doze]: la guarda y la aplica ahora mismo
+  case "$1" in ''|*[!A-Za-z0-9._]*|.*|*.) K_ERR="nombre de paquete no válido"; return 1 ;; *.*) ;; *) K_ERR="nombre de paquete no válido"; return 1 ;; esac
+  pkg_has "$1" || { K_ERR="esa app no está instalada"; return 1; }
+  bgapps_defaults
+  grep -q "^$1|" "$BGAPPS" && { K_ERR="esa app ya está en la lista"; return 1; }
+  printf '%s|%s|%s|%s\n' "$1" "${2:-0}" "${3:-1}" "${4:-0}" >> "$BGAPPS"
+  bgapps_apply_one "$1" "${2:-0}" "${3:-1}" "${4:-0}"
+  rm -f "$CONF/extras.on"
+  log "segundo plano: $1 añadida"; return 0
+}
+bgapps_del() {   # paquete: la quita de la lista y le devuelve lo que se le había quitado
+  bgapps_defaults
+  grep -q "^$1|" "$BGAPPS" || { K_ERR="esa app no está en la lista"; return 1; }
+  bgapps_revert_one "$1"
+  _bk=""; [ -f "$EXTRA" ] && while IFS=: read -r _k _pk _bv; do [ "$_k" = bucket ] && [ "$_pk" = "$1" ] && _bk=$_bv; done < "$EXTRA"
+  [ -n "$_bk" ] && am set-standby-bucket "$1" "$_bk" >/dev/null 2>&1 </dev/null
+  grep -v "^$1|" "$BGAPPS" > "$BGAPPS.t" && mv -f "$BGAPPS.t" "$BGAPPS"
+  [ -f "$EXTRA" ] && grep -v -e "^bucket:$1:" -e "^ops:$1$" -e "^wl:$1$" "$EXTRA" > "$EXTRA.t" 2>/dev/null && mv -f "$EXTRA.t" "$EXTRA" 2>/dev/null
+  rm -f "$CONF/extras.on"
+  log "segundo plano: $1 quitada"; return 0
+}
+bgapps_status() {   # BGAPP|paquete|appops|bucket|doze|instalada (una línea por app de la lista)
+  bgapps_defaults
+  [ -s "$BGAPPS" ] && while IFS='|' read -r _p _o _b _d; do
+    [ -n "$_p" ] && echo "BGAPP|$_p|${_o:-0}|${_b:-0}|${_d:-0}|$(pkg_has "$_p" && echo 1 || echo 0)"
+  done < "$BGAPPS"
+  return 0
+}
 extras_apply() {
   [ -e "$CONF/extras.on" ] && return 0   # solo la primera vez tras el arranque (cada perfil lo repetía: pm, dumpsys, appops... eso era el trabón)
-  # memoria: leer 1 página por fallo de zram y proteger el working set 1 s (deja actuar a lmkd en vez de trabar)
+  # memoria: leer 1 página por fallo de zram, proteger el working set 1 s (deja actuar a lmkd en vez de trabar) y no compactar en caliente
   set_knob vm_pc 0 >/dev/null 2>&1; set_knob vm_ttl 1000 >/dev/null 2>&1
-
-  # Brave fuera de la lista blanca de Doze
-  if pkg_has com.brave.browser && dumpsys deviceidle whitelist 2>/dev/null </dev/null | grep -q 'com.brave.browser'; then
-    ex_has brave_wl || ex_put brave_wl
-    dumpsys deviceidle whitelist -com.brave.browser >/dev/null 2>&1 </dev/null
-  fi
-  # TikTok: sin ejecución en segundo plano y bucket rare
-  if pkg_has com.zhiliaoapp.musically; then
-    ex_has tiktok_ops || ex_put tiktok_ops
-    cmd appops set com.zhiliaoapp.musically RUN_ANY_IN_BACKGROUND ignore >/dev/null 2>&1 </dev/null
-    ex_bucket com.zhiliaoapp.musically
-  fi
-  ex_bucket com.claro.pe.miclaro
+  set_knob vm_si 15 >/dev/null 2>&1; set_knob vm_cp 0 >/dev/null 2>&1
+  # apps en segundo plano, según la lista (la primera vez trae TikTok, Mi Claro y Brave)
+  bgapps_defaults
+  while IFS='|' read -r _p _o _b _d; do [ -n "$_p" ] && bgapps_apply_one "$_p" "$_o" "$_b" "$_d"; done < "$BGAPPS"
   : > "$CONF/extras.on"; log "extras aplicados (memoria y segundo plano)"
 }
 extras_revert() {
   [ -f "$EXTRA" ] || return 0
+  # claves viejas (v1.4 y anteriores): mismo efecto, nombres distintos
   ex_has brave_wl && dumpsys deviceidle whitelist +com.brave.browser >/dev/null 2>&1 </dev/null
   ex_has tiktok_ops && cmd appops set com.zhiliaoapp.musically RUN_ANY_IN_BACKGROUND default >/dev/null 2>&1 </dev/null
-  while IFS=: read -r _k _pk _bk; do [ "$_k" = bucket ] && am set-standby-bucket "$_pk" "${_bk:-active}" >/dev/null 2>&1 </dev/null; done < "$EXTRA"
+  while IFS=: read -r _k _pk _bk; do
+    case "$_k" in
+      ops) cmd appops set "$_pk" RUN_ANY_IN_BACKGROUND default >/dev/null 2>&1 </dev/null ;;
+      wl) dumpsys deviceidle whitelist +"$_pk" >/dev/null 2>&1 </dev/null ;;
+      bucket) am set-standby-bucket "$_pk" "${_bk:-active}" >/dev/null 2>&1 </dev/null ;;
+    esac
+  done < "$EXTRA"
   rm -f "$EXTRA" "$CONF/extras.on"; log "extras revertidos"
 }
 
@@ -599,6 +656,7 @@ prof_apply_u() {
 [ -f "$MODDIR/conflict.sh" ] && . "$MODDIR/conflict.sh"
 [ -f "$MODDIR/gpu.sh" ] && . "$MODDIR/gpu.sh"
 [ -f "$MODDIR/heat.sh" ] && . "$MODDIR/heat.sh"
+[ -f "$MODDIR/watch.sh" ] && . "$MODDIR/watch.sh"
 [ -f "$MODDIR/bt.sh" ] && . "$MODDIR/bt.sh"
 [ -f "$MODDIR/auto.sh" ] && . "$MODDIR/auto.sh"
 [ -f "$MODDIR/tune.sh" ] && . "$MODDIR/tune.sh"

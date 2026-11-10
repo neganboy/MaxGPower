@@ -25,7 +25,7 @@ case "$C" in
       echo "GOV|$(gov_cur)|$_gl|$(cfg_get gov none)"
       gpu_status; rom_limits
       for _p in $(policies); do echo "CPUCAP|$_p|$(rd $CPUF/policy$_p/scaling_max_freq)"; done
-      heat_status; heatx_status
+      heat_status; heatx_status; guard_targets; watch_status
       echo "GPUMODE|$(cfg_get gpu_mode auto)|$(cfg_get gm_max 100)"
       echo "GPUSC|$(cfg_get gpu_scope always)"
       manual_status; conflicts_who
@@ -33,7 +33,7 @@ case "$C" in
     esac
     case "$_sm" in full|more)
       [ "${2-}" = fresh ] && PKGFRESH=1
-      echo "SECT|more"; pad_status; bt_status; bt_extra_status; auto_status; sess_status; tune_status; maint_status; deluxe_status ;;
+      echo "SECT|more"; pad_status; bt_status; bt_extra_status; auto_status; sess_status; tune_status; maint_status; deluxe_status; bgapps_status ;;
     esac
     case "$_sm" in full|boot|static)
       echo "SECT|static"
@@ -113,11 +113,25 @@ case "$C" in
     esac ;;
   heat) case "$1" in
       mode) if heat_set_mode "$2"; then res heat ok "control de calor: $2"; else res heat err "$K_ERR"; fi ;;
+      tgt) if guard_target_set "$2" "$3"; then res heat ok "objetivo de $2: $3 °C"; else res heat err "$K_ERR"; fi ;;
+      tgts) guard_targets ;;
       ant) if heatx_set ant "$2"; then res heat ok "anticipación térmica: $2"; else res heat err "$K_ERR"; fi ;;
       burst) if heatx_set burst "$2"; then res heat ok "ráfaga sostenida: $2"; else res heat err "$K_ERR"; fi ;;
       screen) case "$2" in 0|1) cfg_set heat_screen "$2"; res heat ok "ahorro con pantalla apagada: $([ "$2" = 1 ] && echo sí || echo no)" ;; *) res heat err "usa 0 o 1" ;; esac ;;
       status) heat_status ;;
-      *) echo "uso: heat mode off|suave|normal|estricto | screen 0|1 | status" ;;
+      *) echo "uso: heat mode off|suave|normal|estricto|guardian | tgt <perfil> <30-45> | tgts | ant on|off | burst off|15|30|60 | screen 0|1 | status" ;;
+    esac ;;
+  watch) case "$1" in
+      on|off) if watch_set "$1"; then res watch ok "vigilante de topes: $1"; else res watch err "$K_ERR"; fi ;;
+      status) watch_status ;;
+      *) echo "uso: watch on|off|status" ;;
+    esac ;;
+  bgapps) case "$1" in
+      list) bgapps_status ;;
+      add) if bgapps_add "$2" "$3" "$4" "$5"; then res bgapps ok "$2 añadida a segundo plano"; else res bgapps err "$K_ERR"; fi ;;
+      del) if bgapps_del "$2"; then res bgapps ok "$2 quitada de segundo plano"; else res bgapps err "$K_ERR"; fi ;;
+      apply) rm -f "$CONF/extras.on"; extras_apply; res bgapps ok "segundo plano aplicado" ;;
+      *) echo "uso: bgapps list|add <paquete>|del <paquete>|apply" ;;
     esac ;;
   bt) case "$1" in
       prio) if btprio_set "$2"; then res bt ok "prioridad del Bluetooth: $2"; else res bt err "$K_ERR"; fi ;;
@@ -169,6 +183,7 @@ case "$C" in
   _autod) autod_run ;;
   _maint) maint_job "$1" ;;
   _heatd) heatd_run ;;
+  _watchd) watchd_run ;;
   _padd) padd_run ;;
   _sondause) sonda_use_run "$1" ;;
   safe) case "$1" in clear) rm -f "$CONF/safe"; echo 0 > "$BOOTC"; res safe ok "modo seguro desactivado" ;; *) echo "uso: safe clear" ;; esac ;;

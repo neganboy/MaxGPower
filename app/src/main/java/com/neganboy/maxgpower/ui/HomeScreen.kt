@@ -12,7 +12,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -22,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.neganboy.maxgpower.Conflict
@@ -40,6 +44,7 @@ fun HomeScreen(vm: MaxGViewModel, state: MaxGState) {
     var scanResults by remember { mutableStateOf<List<Conflict>?>(null) }
     var govOpen by remember { mutableStateOf(false) }
     var includedOpen by remember { mutableStateOf(false) }
+    var bgPkg by remember { mutableStateOf("") }
 
     val maxPlan = state.plans["maximo"]
     val maxPrime = maxPlan?.prime ?: 4320000
@@ -243,7 +248,8 @@ fun HomeScreen(vm: MaxGViewModel, state: MaxGState) {
                     "off" to "Sin control de calor: el teléfono se calienta libre.",
                     "suave" to "Actúa tarde y suave, solo si hace mucho calor.",
                     "normal" to "El equilibrio recomendado: baja topes al calentarse.",
-                    "estricto" to "Actúa pronto y fuerte; lo más fresco, algo más lento."
+                    "estricto" to "Actúa pronto y fuerte; lo más fresco, algo más lento.",
+                    "guardian" to "Siete niveles finos con objetivo de temperatura por perfil: recorta poco a poco y solo lo necesario."
                 )
                 var first = true
                 for (mode in MaxGState.HEAT_MODES) {
@@ -257,9 +263,24 @@ fun HomeScreen(vm: MaxGViewModel, state: MaxGState) {
                 }
                 Spacer(Modifier.height(10.dp))
                 Text(
-                    "Ahora: CPU ${if (state.heat.cpuC > 0) "%.1f°".format(state.heat.cpuC) else "—"} · batería ${if (state.heat.batC > 0) "%.1f°".format(state.heat.batC) else "—"} · chasis ${if (state.heat.skinC > 0) "%.1f°".format(state.heat.skinC) else "—"} · nivel ${state.heat.level}",
+                    "Ahora: CPU ${if (state.heat.cpuC > 0) "%.1f°".format(state.heat.cpuC) else "—"} · batería ${if (state.heat.batC > 0) "%.1f°".format(state.heat.batC) else "—"} · chasis ${if (state.heat.skinC > 0) "%.1f°".format(state.heat.skinC) else "—"} · nivel ${state.heat.level}/${state.heat.maxLevel}" +
+                        if (state.heat.mode == "guardian") " · objetivo ${state.heat.target}°C" else "",
                     fontSize = 12.5.sp, color = NeuColors.Muted
                 )
+                if (state.heat.mode == "guardian") {
+                    Spacer(Modifier.height(12.dp))
+                    Text("Objetivos de temperatura", fontSize = 14.5.sp, fontWeight = FontWeight.Bold, color = NeuColors.Text)
+                    Text("A qué temperatura de batería empieza a recortar cada perfil (30-45 °C). Por defecto 35 °C en diario y 40 °C en juego y rendimiento.", fontSize = 12.5.sp, color = NeuColors.Muted)
+                    Spacer(Modifier.height(6.dp))
+                    for (info in MaxGState.PROFILES) {
+                        val tgt = state.heatTargets[info.first]
+                            ?: if (info.first in listOf("juego", "rendfresco", "alto", "maximo")) 40 else 35
+                        TargetRow(info.second, tgt) { delta ->
+                            val next = (tgt + delta).coerceIn(30, 45)
+                            if (next != tgt) vm.runCommand("Calor") { CtlClient.heatTgt(info.first, next) }
+                        }
+                    }
+                }
             }
         }
         item {
@@ -295,6 +316,32 @@ fun HomeScreen(vm: MaxGViewModel, state: MaxGState) {
                         }
                     }
                 }
+            }
+        }
+
+        // Vigilante de topes
+        item {
+            NeuCard(Modifier.padding(top = 20.dp)) {
+                RuleRow(
+                    "Vigilante de topes",
+                    "Si la ROM u otra app sube un tope por encima de lo que pide tu perfil, lo devuelve al instante, sin esperar. Solo corrige hacia abajo: si el térmico baja un tope, se respeta."
+                ) {
+                    NeuSwitch(state.watch.on) {
+                        vm.runCommand("Vigilante") {
+                            if (!state.watch.on) CtlClient.watchOn() else CtlClient.watchOff()
+                        }
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    when {
+                        !state.watch.inotify -> "Este teléfono no tiene inotifyd: el vigilante no puede observar los topes."
+                        state.watch.alive -> "Vigilando los topes ahora mismo."
+                        state.watch.on -> "Encendido, esperando a que arranque el vigilante."
+                        else -> "Apagado."
+                    },
+                    fontSize = 12.5.sp, color = NeuColors.Muted
+                )
             }
         }
 
@@ -337,12 +384,95 @@ fun HomeScreen(vm: MaxGViewModel, state: MaxGState) {
                         modifier = Modifier.padding(start = 8.dp))
                 }
                 if (includedOpen) {
-                    SectionSub("Memoria con menos trabajo de zram y protección de las apps recientes. TikTok sin ejecución en segundo plano, Mi Claro en espera «rare» y Brave fuera de la lista blanca de Doze. «Original» lo deja todo como estaba.")
+                    SectionSub("Memoria con menos trabajo de zram y protección de las apps recientes. Además, estas apps no se ejecutan en segundo plano como antes: toca ✕ para quitar una, o añade otra. «Original» lo deja todo como estaba.")
+                    Spacer(Modifier.height(10.dp))
+                    if (state.bgapps.isEmpty()) {
+                        Text("Ninguna app restringida.", fontSize = 13.sp, color = NeuColors.Muted)
+                    }
+                    for (app in state.bgapps) {
+                        Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(app.pkg, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = NeuColors.Text)
+                                Text(
+                                    buildString {
+                                        if (app.ops) append("sin ejecución en segundo plano")
+                                        if (app.bucket) {
+                                            if (isNotEmpty()) append(" · ")
+                                            append("en espera «rare»")
+                                        }
+                                        if (app.doze) {
+                                            if (isNotEmpty()) append(" · ")
+                                            append("fuera de la lista blanca de Doze")
+                                        }
+                                        if (isEmpty()) append("sin restricciones")
+                                        if (!app.installed) append(" · no instalada")
+                                    },
+                                    fontSize = 12.sp, color = NeuColors.Muted
+                                )
+                            }
+                            Text(
+                                "✕", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = NeuColors.Bad,
+                                modifier = Modifier.clickable {
+                                    vm.runCommand("Segundo plano") { CtlClient.bgappsDel(app.pkg) }
+                                }.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    OutlinedTextField(
+                        value = bgPkg,
+                        onValueChange = { bgPkg = it },
+                        label = { Text("Añadir app (nombre del paquete)") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = NeuColors.CardTop,
+                            unfocusedContainerColor = NeuColors.CardTop
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        NeuButton("Añadir en espera «rare»", primary = true, enabled = bgPkg.isNotBlank()) {
+                            val pkg = bgPkg.trim()
+                            vm.runCommand("Segundo plano") { CtlClient.bgappsAdd(pkg) }
+                            bgPkg = ""
+                        }
+                    }
+                    if (state.autoRecent.isNotEmpty()) {
+                        Spacer(Modifier.height(12.dp))
+                        Text("Apps recientes", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = NeuColors.Text)
+                        Spacer(Modifier.height(6.dp))
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            for (rec in state.autoRecent.take(8)) {
+                                val already = state.bgapps.any { it.pkg == rec.pkg }
+                                NeuChip(rec.pkg.substringAfterLast('.'), already) {
+                                    if (!already) vm.runCommand("Segundo plano") { CtlClient.bgappsAdd(rec.pkg) }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
 
         item { Spacer(Modifier.height(32.dp)) }
+    }
+}
+
+@Composable
+private fun TargetRow(label: String, temp: Int, onStep: (Int) -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, fontSize = 13.5.sp, color = NeuColors.Text, modifier = Modifier.weight(1f))
+        Text(
+            "−", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = NeuColors.Blue2,
+            modifier = Modifier.clickable { onStep(-1) }.padding(horizontal = 10.dp, vertical = 2.dp)
+        )
+        Text("$temp °C", fontSize = 13.5.sp, fontWeight = FontWeight.Bold, color = NeuColors.Text)
+        Text(
+            "+", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = NeuColors.Blue2,
+            modifier = Modifier.clickable { onStep(1) }.padding(horizontal = 10.dp, vertical = 2.dp)
+        )
     }
 }
 

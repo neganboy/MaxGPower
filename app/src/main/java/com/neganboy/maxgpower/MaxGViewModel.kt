@@ -67,7 +67,8 @@ class MaxGViewModel : ViewModel() {
                 govCfg = live.govCfg, gpu = live.gpu, romLimits = live.romLimits,
                 gpuMode = live.gpuMode, gpuMaxPct = live.gpuMaxPct,
                 gpuScope = live.gpuScope, cpuCaps = live.cpuCaps,
-                heat = live.heat, heatX = live.heatX, manual = live.manual,
+                heat = live.heat, heatX = live.heatX, heatTargets = live.heatTargets,
+                watch = live.watch, manual = live.manual,
                 conflicts = live.conflicts, autoNow = live.autoNow ?: cur.autoNow,
                 info = live.info.copy(
                     ramPct = if (live.info.ramPct != 0) live.info.ramPct else cur.info.ramPct,
@@ -94,7 +95,7 @@ class MaxGViewModel : ViewModel() {
                 autoBoostDesc = more.autoBoostDesc, pad = more.pad, padOpt = more.padOpt,
                 padTests = more.padTests, padScan = more.padScan,
                 tune = more.tune, maint = more.maint, deluxe = more.deluxe,
-                sessions = more.sessions
+                sessions = more.sessions, bgapps = more.bgapps
             )
         }
     }
@@ -145,7 +146,8 @@ class MaxGViewModel : ViewModel() {
                         autoBoostDesc = more.autoBoostDesc, pad = more.pad,
                         padOpt = more.padOpt, padTests = more.padTests,
                         padScan = more.padScan, tune = more.tune, maint = more.maint,
-                        deluxe = more.deluxe, sessions = more.sessions
+                        deluxe = more.deluxe, sessions = more.sessions,
+                        bgapps = more.bgapps
                     )
                 }
                 if (info != null) s = s.copy(info = info.info)

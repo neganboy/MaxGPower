@@ -8,6 +8,11 @@ App con root para el **Poco F8 Pro (Snapdragon 8 Elite)** con los perfiles manua
 
 - 12 perfiles: mínimo, ultra, profundo, ahorro, batería, eco, juego, medio, diario, rendfresco, alto y máximo
 - Gobernador de CPU, control manual, GPU (modo, tope, piso), control de calor, modo inteligente (Auto) y modo mando
+- **Guardián térmico (v1.5):** 7 niveles finos con objetivo de temperatura editable por perfil (30-45 °C), sensores de batería, carcasa y chip, y piso de nivel con la pantalla apagada
+- **Vigilante de topes (v1.5):** si la ROM u otra app sube un tope por encima del perfil, lo devuelve al instante
+- **Apps en segundo plano (v1.5):** lista editable de apps restringidas (sin ejecución en segundo plano, en espera «rare» o fuera de Doze)
+- **I/O, memoria y scheduler por perfil (v1.5):** lectura anticipada, peticiones y presión de caché según el perfil; ajustes del scheduler al arrancar
+- **Red TCP (v1.5):** mejor algoritmo disponible (bbr3/bbr2/bbrplus/bbr/…), sack y baja latencia, con interruptor propio
 - Sonda de diagnóstico, detector de conflictos y modo seguro
 - Interfaz nativa (Jetpack Compose + Material 3). Nada de WebView.
 

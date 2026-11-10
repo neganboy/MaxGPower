@@ -49,7 +49,23 @@ data class HeatState(
     val batC: Float = 0f,
     val screen: Boolean = false,
     val alive: Boolean = false,
-    val skinC: Float = 0f
+    val skinC: Float = 0f,
+    val target: Int = 35,
+    val maxLevel: Int = 2
+)
+
+data class WatchState(
+    val on: Boolean = true,
+    val alive: Boolean = false,
+    val inotify: Boolean = false
+)
+
+data class BgApp(
+    val pkg: String,
+    val ops: Boolean = false,
+    val bucket: Boolean = false,
+    val doze: Boolean = false,
+    val installed: Boolean = false
 )
 
 data class HeatX(
@@ -121,7 +137,10 @@ data class TuneState(
     val scan: Boolean = false,
     val cc: String = "",
     val bbr: Boolean = false,
-    val ra: String = ""
+    val ra: String = "",
+    val sack: Boolean = false,
+    val lowlat: Boolean = false,
+    val ccOn: Boolean = true
 )
 
 data class MaintState(val on: Boolean = false, val last: Long = 0, val running: Boolean = false, val result: List<String> = emptyList())
@@ -145,6 +164,9 @@ data class MaxGState(
     val cpuCaps: Map<String, Int> = emptyMap(),
     val heat: HeatState = HeatState(),
     val heatX: HeatX = HeatX(),
+    val heatTargets: Map<String, Int> = emptyMap(),
+    val watch: WatchState = WatchState(),
+    val bgapps: List<BgApp> = emptyList(),
     val bt: BtState = BtState(),
     val btPrio: Boolean = false,
     val btScan: Boolean = false,
@@ -187,8 +209,8 @@ data class MaxGState(
             Triple("alto", "Alto", "Apenas un 2-4 % por debajo del máximo: ideal para juegos pesados sin el pico final."),
             Triple("maximo", "Máx.", "Sin topes y con subida temprana de frecuencia. Para benchmarks o ratos cortos. Calienta.")
         )
-        val HEAT_MODES = listOf("off", "suave", "normal", "estricto")
-        val HEAT_MODE_NAMES = mapOf("off" to "Apagado", "suave" to "Suave", "normal" to "Normal", "estricto" to "Estricto")
+        val HEAT_MODES = listOf("off", "suave", "normal", "estricto", "guardian")
+        val HEAT_MODE_NAMES = mapOf("off" to "Apagado", "suave" to "Suave", "normal" to "Normal", "estricto" to "Estricto", "guardian" to "Guardián")
 
         fun parse(out: String): MaxGState {
             var device = DeviceInfo()
@@ -199,6 +221,9 @@ data class MaxGState(
             var gpuMode = "auto"; var gpuMaxPct = 100; var gpuScope = "always"
             val cpuCaps = mutableMapOf<String, Int>()
             var heat = HeatState(); var heatX = HeatX()
+            val heatTargets = mutableMapOf<String, Int>()
+            var watch = WatchState()
+            val bgapps = mutableListOf<BgApp>()
             var bt = BtState(); var btPrio = false; var btScan = false; var btNice = "-"
             var auto = AutoState(); var autoNow: AutoStatusNow? = null
             val autoApps = mutableListOf<AutoApp>()
@@ -254,8 +279,23 @@ data class MaxGState(
                         batC = (f.getOrElse(5) { "0" }.toIntOrNull() ?: 0) / 10f,
                         screen = f.getOrElse(6) { "0" } == "1",
                         alive = f.getOrElse(7) { "0" } == "1",
-                        skinC = (f.getOrElse(8) { "0" }.toIntOrNull() ?: 0) / 10f
+                        skinC = (f.getOrElse(8) { "0" }.toIntOrNull() ?: 0) / 10f,
+                        target = f.getOrElse(9) { "35" }.toIntOrNull() ?: 35,
+                        maxLevel = f.getOrElse(10) { "2" }.toIntOrNull() ?: 2
                     )
+                    "TGT" -> heatTargets[f.getOrElse(1) { "" }] = f.getOrElse(2) { "35" }.toIntOrNull() ?: 35
+                    "WATCH" -> watch = WatchState(
+                        on = f.getOrElse(1) { "1" } == "1",
+                        alive = f.getOrElse(2) { "0" } == "1",
+                        inotify = f.getOrElse(3) { "0" } == "1"
+                    )
+                    "BGAPP" -> bgapps.add(BgApp(
+                        pkg = f.getOrElse(1) { "" },
+                        ops = f.getOrElse(2) { "0" } == "1",
+                        bucket = f.getOrElse(3) { "0" } == "1",
+                        doze = f.getOrElse(4) { "0" } == "1",
+                        installed = f.getOrElse(5) { "0" } == "1"
+                    ))
                     "HTX" -> heatX = HeatX(
                         ant = f.getOrElse(1) { "0" } == "1",
                         burst = f.getOrElse(2) { "off" },
@@ -331,7 +371,9 @@ data class MaxGState(
                         net = f.getOrElse(1) { "0" } == "1", io = f.getOrElse(2) { "0" } == "1",
                         dns = f.getOrElse(3) { "" }, anim = f.getOrElse(4) { "0" } == "1",
                         scan = f.getOrElse(5) { "0" } == "1", cc = f.getOrElse(6) { "" },
-                        bbr = f.getOrElse(7) { "0" } == "1", ra = f.getOrElse(8) { "" }
+                        bbr = f.getOrElse(7) { "0" } == "1", ra = f.getOrElse(8) { "" },
+                        sack = f.getOrElse(9) { "0" } == "1", lowlat = f.getOrElse(10) { "0" } == "1",
+                        ccOn = f.getOrElse(11) { "1" } == "1"
                     )
                     "MAINT" -> maint = MaintState(
                         on = f.getOrElse(1) { "0" } == "1",
@@ -404,6 +446,7 @@ data class MaxGState(
                 govCur = govCur, govList = govList, govCfg = govCfg, gpu = gpu,
                 romLimits = romLimits, gpuMode = gpuMode, gpuMaxPct = gpuMaxPct,
                 gpuScope = gpuScope, cpuCaps = cpuCaps, heat = heat, heatX = heatX,
+                heatTargets = heatTargets, watch = watch, bgapps = bgapps,
                 bt = bt, btPrio = btPrio, btScan = btScan, btNice = btNice,
                 auto = auto, autoNow = autoNow, autoApps = autoApps,
                 autoRecent = autoRecent, autoMboost = autoMboost,
