@@ -4,6 +4,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -32,6 +34,7 @@ import com.neganboy.maxgpower.MaxGViewModel
  * quién manda, lista de perfiles por grupos, mis perfiles, calor,
  * gobernador e incluido siempre.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun HomeScreen(vm: MaxGViewModel, state: MaxGState) {
     var scanResults by remember { mutableStateOf<List<Conflict>?>(null) }
@@ -68,10 +71,11 @@ fun HomeScreen(vm: MaxGViewModel, state: MaxGState) {
             }
         }
 
-        // Anillo principal del perfil activo
+        // Anillo principal del perfil activo (compacto: anillo arriba, no centrado,
+        // para que la tarjeta no se estire con un hueco vacío en medio).
         item {
             NeuCard(Modifier.padding(top = 18.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(verticalAlignment = Alignment.Top) {
                     if (curPlan != null) {
                         RingGauge(
                             pctA = curPlan.prime * 100f / maxPrime,
@@ -91,14 +95,18 @@ fun HomeScreen(vm: MaxGViewModel, state: MaxGState) {
                             curInfo?.third ?: "Tu ROM tal cual: sin topes ni ajustes de MaxG Power.",
                             fontSize = 12.5.sp, color = NeuColors.Muted, modifier = Modifier.padding(top = 4.dp)
                         )
-                        Row(
+                        // Los chips se envuelven (FlowRow): en una Row no cabían los 3
+                        // en la columna angosta. Los valores son PORCENTAJES del perfil,
+                        // no frecuencias (antes se mostraba "21 MHz" por error).
+                        FlowRow(
                             Modifier.padding(top = 10.dp),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             if (curPlan != null) {
-                                InfoChip("Núcleos 0-5 · ${ghz(curPlan.perf)}")
-                                InfoChip("Prime · ${ghz(curPlan.prime)}")
-                                if (curPlan.gpu > 0) InfoChip("GPU · ${curPlan.gpu / 1_000_000} MHz", gray = true)
+                                InfoChip("Núcleos 0-5 · ${curPlan.perf}%")
+                                InfoChip("Prime · ${curPlan.prime}%")
+                                if (curPlan.gpu > 0) InfoChip("GPU · ${curPlan.gpu}%", gray = true)
                             } else {
                                 InfoChip("Original", gray = true)
                             }
@@ -185,7 +193,7 @@ fun HomeScreen(vm: MaxGViewModel, state: MaxGState) {
                                 selected = state.profile == id,
                                 title = info.second,
                                 desc = info.third,
-                                right = plan?.let { "hasta ${ghz(it.prime)}" },
+                                right = plan?.let { "hasta ${it.prime}%" },
                                 divider = !first
                             ) { vm.runCommand("Perfil ${info.second}") { CtlClient.applyProfile(id) } }
                         }
@@ -345,9 +353,6 @@ private fun WhoRow(label: String, value: String) {
         Text(value, fontSize = 13.sp, color = NeuColors.Muted)
     }
 }
-
-fun ghz(hz: Int): String =
-    if (hz >= 1_000_000) "%.2f GHz".format(hz / 1_000_000.0) else "$hz MHz"
 
 fun profileShort(id: String): String =
     MaxGState.PROFILES.firstOrNull { it.first == id }?.second
