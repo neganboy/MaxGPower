@@ -208,6 +208,17 @@ raw_write() {   # knob valor  (variables propias rw_*: cpu_set y gpu_set siguen 
   orig_has "$1" || printf '%s\t%s\n' "$1" "$rw_c" >> "$ORIG"
   knob_put "$1" "$2"
   knob_cur_v "$1"; rw_n=$KC
+  # El kernel aplica scaling_max_freq/scaling_min_freq de forma ASÍNCRONA (cpufreq actualiza la política en un
+  # trabajo diferido): leer justo después de escribir devuelve el valor ANTERIOR aunque la escritura ya se aceptó.
+  # Antes eso se daba por "rechazado" (FALLO ... lo dejó en <el valor anterior>), el perfil no se guardaba y no
+  # quedaba en "deseado". Se espera (hasta ~0,5 s) a que el valor nuevo se vea antes de decidir.
+  case "$1" in cpu_max_*|cpu_min_*)
+    rw_i=0
+    while [ "$rw_n" != "$2" ] && [ "$rw_i" -lt 16 ]; do
+      sleep 0.03 2>/dev/null || break
+      knob_cur_v "$1"; rw_n=$KC; rw_i=$((rw_i+1))
+    done ;;
+  esac
   if [ "$rw_n" = "$2" ]; then return 0; fi
   # algunos nodos devuelven el valor redondeado al escalón más cercano (hasta un 8 %); más lejos que eso es que alguien más lo cambió o el kernel lo rechazó
   case "$1" in cpu_*|gpu_max|gpu_min) gpu_be; if [ "${GBE-}" != pwr ] || { [ "$1" != gpu_max ] && [ "$1" != gpu_min ]; }; then

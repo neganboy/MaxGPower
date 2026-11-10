@@ -17,8 +17,8 @@ android {
         applicationId "com.neganboy.maxgpower"
         minSdk 28
         targetSdk 36
-        versionCode 3
-        versionName "1.2"
+        versionCode 4
+        versionName "1.3"
     }
 
     // Firma de lanzamiento: las claves MAXG_*/LUCILLE_* viven en
