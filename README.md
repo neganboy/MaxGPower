@@ -13,6 +13,7 @@ App con root para el **Poco F8 Pro (Snapdragon 8 Elite)** con los perfiles manua
 - **Apps en segundo plano (v1.5):** lista editable de apps restringidas (sin ejecución en segundo plano, en espera «rare» o fuera de Doze)
 - **I/O, memoria y scheduler por perfil (v1.5):** lectura anticipada, peticiones y presión de caché según el perfil; ajustes del scheduler al arrancar
 - **Red TCP (v1.5):** mejor algoritmo disponible (bbr3/bbr2/bbrplus/bbr/…), sack y baja latencia, con interruptor propio
+- **Actualizaciones dentro de la app (v1.6):** revisa GitHub Releases, descarga la APK y la instala desde la app (verifica paquete y firma antes de instalar)
 - Sonda de diagnóstico, detector de conflictos y modo seguro
 - Interfaz nativa (Jetpack Compose + Material 3). Nada de WebView.
 

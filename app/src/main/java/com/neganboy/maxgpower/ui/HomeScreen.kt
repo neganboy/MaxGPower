@@ -13,9 +13,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -24,14 +26,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.neganboy.maxgpower.AppUpdater
 import com.neganboy.maxgpower.Conflict
 import com.neganboy.maxgpower.CtlClient
 import com.neganboy.maxgpower.MaxGState
 import com.neganboy.maxgpower.MaxGViewModel
+import com.neganboy.maxgpower.UpdateUiState
 
 /**
  * Pestaña Perfiles, copiada de la WebUI (s-perf): anillo principal,
@@ -45,6 +50,7 @@ fun HomeScreen(vm: MaxGViewModel, state: MaxGState) {
     var govOpen by remember { mutableStateOf(false) }
     var includedOpen by remember { mutableStateOf(false) }
     var bgPkg by remember { mutableStateOf("") }
+    val updateState by vm.update.collectAsState()
 
     val maxPlan = state.plans["maximo"]
     val maxPrime = maxPlan?.prime ?: 4320000
@@ -134,6 +140,73 @@ fun HomeScreen(vm: MaxGViewModel, state: MaxGState) {
                     "GPU: ${if (state.gpu.clk > 0) "${state.gpu.clk} MHz" else "—"} · piso ${if (state.gpu.floor > 0) "${state.gpu.floor} MHz" else "apagado"} · modo ${state.gpuMode}",
                     fontSize = 12.5.sp, color = NeuColors.Muted
                 )
+            }
+        }
+
+        // Actualizaciones desde GitHub (sin Play Store)
+        item {
+            val context = LocalContext.current
+            NeuCard(Modifier.padding(top = 20.dp)) {
+                SectionTitle("Actualizaciones")
+                SectionSub("Revisa GitHub y descarga la versión nueva sin pasar por la Play Store. La instalación la confirmas tú en el instalador de Android.")
+                Spacer(Modifier.height(10.dp))
+                when (val u = updateState) {
+                    is UpdateUiState.Idle -> {
+                        NeuButton("Buscar actualizaciones") { vm.checkUpdates(context) }
+                    }
+                    is UpdateUiState.Checking -> {
+                        Text("Buscando en GitHub…", fontSize = 13.sp, color = NeuColors.Muted)
+                    }
+                    is UpdateUiState.UpToDate -> {
+                        Text("Estás al día: v${u.version}.", fontSize = 13.sp, color = NeuColors.Text)
+                        Spacer(Modifier.height(10.dp))
+                        NeuButton("Volver a buscar") { vm.checkUpdates(context) }
+                    }
+                    is UpdateUiState.Available -> {
+                        Text(
+                            "Hay una versión nueva: v${u.release.version}",
+                            fontSize = 14.5.sp, fontWeight = FontWeight.Bold, color = NeuColors.Text
+                        )
+                        if (u.release.notes.isNotBlank()) {
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                u.release.notes.take(300) + if (u.release.notes.length > 300) "…" else "",
+                                fontSize = 12.5.sp, color = NeuColors.Muted
+                            )
+                        }
+                        Spacer(Modifier.height(12.dp))
+                        NeuButton("Descargar e instalar", primary = true) { vm.downloadUpdate(context) }
+                    }
+                    is UpdateUiState.Downloading -> {
+                        Text("Descargando… ${u.progress}%", fontSize = 13.sp, color = NeuColors.Text)
+                        Spacer(Modifier.height(8.dp))
+                        LinearProgressIndicator(
+                            progress = u.progress / 100f,
+                            modifier = Modifier.fillMaxWidth(),
+                            color = NeuColors.Blue2
+                        )
+                    }
+                    is UpdateUiState.Downloaded -> {
+                        Text("Descarga lista y verificada (misma llave que la instalada).", fontSize = 13.sp, color = NeuColors.Text)
+                        Spacer(Modifier.height(10.dp))
+                        NeuButton("Instalar ahora", primary = true) {
+                            vm.runRaw("Instalar") {
+                                if (!AppUpdater.canInstall(context)) {
+                                    context.startActivity(AppUpdater.unknownSourcesIntent(context))
+                                    "Activa «Permitir desde esta fuente» y vuelve a tocar Instalar"
+                                } else {
+                                    context.startActivity(AppUpdater.installIntent(context, u.file))
+                                    "Abriendo el instalador…"
+                                }
+                            }
+                        }
+                    }
+                    is UpdateUiState.Error -> {
+                        Text(u.message, fontSize = 13.sp, color = NeuColors.Bad)
+                        Spacer(Modifier.height(10.dp))
+                        NeuButton("Reintentar") { vm.checkUpdates(context) }
+                    }
+                }
             }
         }
 

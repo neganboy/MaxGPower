@@ -2,7 +2,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <!-- MaxG Power es una app con root: todo lo que hace pasa por su.
-         No necesita internet ni permisos peligrosos. -->
+         Internet solo se usa para revisar actualizaciones en GitHub.
+         Instalar APKs necesita el permiso de orígenes desconocidos, que
+         Android pide aparte la primera vez que se instala una actualización. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
@@ -40,6 +44,17 @@
             android:name=".MaxGService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+
+        <!-- Para pasarle la APK descargada al instalador de Android -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="com.neganboy.maxgpower.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
 
     </application>
 
