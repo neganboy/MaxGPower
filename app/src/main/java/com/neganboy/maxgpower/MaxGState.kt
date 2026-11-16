@@ -113,7 +113,22 @@ data class PadState(
 )
 
 data class PadOpt(val hz: Boolean = false, val wifi: Boolean = false, val qos: Int = 0, val maxHz: Int = 0)
-data class PadTest(val t: Long, val mode: Boolean, val transport: String, val hz: Int, val avg: Int, val max: Int, val pc: Int, val name: String)
+data class PadTest(val t: Long, val mode: Boolean, val transport: String, val hz: Int, val avg: Int, val max: Int, val pc: Int, val name: String, val p95: Int = 0, val gt11: Int = 0, val verdict: String = "")
+
+/** GameSir X4 Aileron — Modo Ultra (v1.11). El teléfono ve un solo
+ * dispositivo Bluetooth (la mitad izquierda); la derecha le habla a
+ * la izquierda por RF. wifiBand: "2.4", "5", "6" o "" si no hay Wi-Fi. */
+data class GameSirState(
+    val ultra: Boolean = false,
+    val isGamesir: Boolean = false,
+    val halves: Int = 0,
+    val names: String = "",
+    val wifiBand: String = "",
+    val a2dp: Int = 0,
+    val qos: Int = 0,
+    val btFast: Boolean = false,
+    val padOn: Boolean = false
+)
 data class PadScan(val name: String, val transport: String, val event: String, val vid: String, val recommended: Boolean, val why: String)
 
 data class ManualState(
@@ -182,6 +197,7 @@ data class MaxGState(
     val padOpt: PadOpt = PadOpt(),
     val padTests: List<PadTest> = emptyList(),
     val padScan: List<PadScan> = emptyList(),
+    val gamesir: GameSirState = GameSirState(),
     val manual: ManualState = ManualState(),
     val tune: TuneState = TuneState(),
     val maint: MaintState = MaintState(),
@@ -232,6 +248,7 @@ data class MaxGState(
             var pad = PadState(); var padOpt = PadOpt()
             val padTests = mutableListOf<PadTest>()
             val padScan = mutableListOf<PadScan>()
+            var gamesir = GameSirState()
             var manual = ManualState()
             var tune = TuneState(); var maint = MaintState()
             val deluxe = mutableMapOf<String, Boolean>()
@@ -353,8 +370,22 @@ data class MaxGState(
                         avg = f.getOrElse(5) { "0" }.toIntOrNull() ?: 0,
                         max = f.getOrElse(6) { "0" }.toIntOrNull() ?: 0,
                         pc = f.getOrElse(7) { "0" }.toIntOrNull() ?: 0,
-                        name = f.getOrElse(8) { "" }
+                        name = f.getOrElse(8) { "" },
+                        p95 = f.getOrElse(9) { "0" }.toIntOrNull() ?: 0,
+                        gt11 = f.getOrElse(10) { "0" }.toIntOrNull() ?: 0,
+                        verdict = f.getOrElse(11) { "" }
                     ))
+                    "GS" -> gamesir = GameSirState(
+                        ultra = f.getOrElse(1) { "0" } == "1",
+                        isGamesir = f.getOrElse(2) { "0" } == "1",
+                        halves = f.getOrElse(3) { "0" }.toIntOrNull() ?: 0,
+                        names = f.getOrElse(4) { "" },
+                        wifiBand = f.getOrElse(5) { "" },
+                        a2dp = f.getOrElse(6) { "0" }.toIntOrNull() ?: 0,
+                        qos = f.getOrElse(7) { "0" }.toIntOrNull() ?: 0,
+                        btFast = f.getOrElse(8) { "0" } == "1",
+                        padOn = f.getOrElse(9) { "0" } == "1"
+                    )
                     "PADSCAN" -> padScan.add(PadScan(f.getOrElse(1) { "" }, f.getOrElse(2) { "" }, f.getOrElse(3) { "" }, f.getOrElse(4) { "" }, f.getOrElse(5) { "0" } == "1", f.getOrElse(6) { "" }))
                     "MANUAL" -> manual = ManualState(
                         on = f.getOrElse(1) { "0" } == "1", has = f.getOrElse(2) { "0" } == "1",
@@ -452,6 +483,7 @@ data class MaxGState(
                 autoRecent = autoRecent, autoMboost = autoMboost,
                 autoBoostMethod = autoBoostMethod, autoBoostDesc = autoBoostDesc,
                 pad = pad, padOpt = padOpt, padTests = padTests, padScan = padScan,
+                gamesir = gamesir,
                 manual = manual, tune = tune, maint = maint, deluxe = deluxe,
                 sessions = sessions, plans = plans, customProfiles = customProfiles,
                 freqs = freqs, conflicts = conflicts, info = info

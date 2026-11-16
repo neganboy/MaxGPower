@@ -14,7 +14,7 @@ object ScriptsInstaller {
     // v2: la v1 copiaba los scripts con el prefijo maxg_ (maxg_ctl.sh) y
     // ctl.sh no existía, así que ningún comando se aplicaba. Ahora se
     // quita el prefijo al copiar y se borran los restos de la v1.
-    private const val MARKER = "$BIN_DIR/.maxg-app-v4"  // v1.5: watch.sh (vigilante de topes) + guardián térmico
+    private const val MARKER = "$BIN_DIR/.maxg-app-v5"  // v1.11: GameSir Ultra (gamesir on|off|test|resync en ctl.sh + pad.sh) — sin este cambio la app seguiría usando los scripts viejos
 
     /** Copia los scripts si falta el marcador de esta versión. Devuelve true si están listos. */
     fun ensureInstalled(context: Context): Boolean {

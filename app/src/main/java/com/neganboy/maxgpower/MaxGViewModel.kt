@@ -124,6 +124,7 @@ class MaxGViewModel : ViewModel() {
                 autoMboost = more.autoMboost, autoBoostMethod = more.autoBoostMethod,
                 autoBoostDesc = more.autoBoostDesc, pad = more.pad, padOpt = more.padOpt,
                 padTests = more.padTests, padScan = more.padScan,
+                gamesir = more.gamesir,
                 tune = more.tune, maint = more.maint, deluxe = more.deluxe,
                 sessions = more.sessions, bgapps = more.bgapps
             )
@@ -175,7 +176,8 @@ class MaxGViewModel : ViewModel() {
                         autoBoostMethod = more.autoBoostMethod,
                         autoBoostDesc = more.autoBoostDesc, pad = more.pad,
                         padOpt = more.padOpt, padTests = more.padTests,
-                        padScan = more.padScan, tune = more.tune, maint = more.maint,
+                        padScan = more.padScan, gamesir = more.gamesir,
+                        tune = more.tune, maint = more.maint,
                         deluxe = more.deluxe, sessions = more.sessions,
                         bgapps = more.bgapps
                     )

@@ -159,7 +159,7 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                             Text(
-                                "v1.10 · por Neganboy · hecho para tu Poco F8 Pro",
+                                "v1.11 · por Neganboy · hecho para tu Poco F8 Pro",
                                 fontSize = 12.sp, color = NeuColors.Muted, modifier = Modifier.padding(top = 2.dp)
                             )
                         }

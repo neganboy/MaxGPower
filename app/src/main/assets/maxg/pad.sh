@@ -220,6 +220,10 @@ pad_opt_set() {   # hz|wifi 0|1
 
 pad_enter() {   # $1 = "nombre|bus|evento"
   : > "$PADORIG"; echo "$1|qos=0" > "$PADSTATE"; log "modo mando: mando detectado ($1), activando"
+  # GameSir Ultra: si el mando que acaba de conectar es un GameSir/X4 y
+  # Ultra está encendido, el reposo de CPU se fuerza a 60 µs (estricto)
+  # antes de abrir el bloqueo de reposo.
+  if [ "$(cfg_get gs_ultra 0)" = 1 ]; then case "$1" in *[Gg][Aa][Mm][Ee][Ss][Ii][Rr]*|*[Xx]4[Aa]*) cfg_set pad_qos 60 ;; esac; fi
   pad_ib_on; pad_thr_on; pad_radio_on; pad_usb_on; pad_bt_on; pad_hz_on; pad_wifi_on
   case "$1" in *"|usb|"*) pad_usbpm_on ;; esac
   pad_qos_on && _q=1 || _q=0
@@ -270,14 +274,15 @@ padd_stop() {
 }
 
 # ---- medidor: frecuencia real de reportes y saltos del mando ----
-pad_test() {   # segundos
-  _s=${1:-5}; isnum "$_s" || _s=5; [ "$_s" -lt 3 ] && _s=3; [ "$_s" -gt 15 ] && _s=15
-  _pi=$(pad_info) || { echo "PAD|err|No hay ningún mando conectado"; return 1; }
-  _ev=${_pi##*\|}; _rest=${_pi%\|*}; _nm=${_rest%\|*}; _tr=${_rest#*\|}   # la barra va escapada: en mksh (el sh de Android) una | sin escapar en un patrón significa "o"
+pad_test_run() {   # $1=evento $2=segundos $3=nombre $4=transporte — mide ese nodo y guarda el resultado; lo usan pad_test y gamesir test
+  _ev=$1; _s=${2:-5}; isnum "$_s" || _s=5; [ "$_s" -lt 3 ] && _s=3; [ "$_s" -gt 15 ] && _s=15
+  _nm=$3; _tr=$4
+  [ -n "$_ev" ] && [ -n "$_nm" ] || { echo "PAD|err|No hay ningún mando conectado"; return 1; }
   command -v getevent >/dev/null 2>&1 || { echo "PAD|err|Este sistema no trae getevent"; return 1; }
   getevent -t "$R/dev/input/$_ev" > "$CONF/pt.txt" 2>/dev/null </dev/null & _g=$!
   sleep "$_s"; kill "$_g" 2>/dev/null; wait "$_g" 2>/dev/null
   _prev=0; _ps=0; _pu=0; _first=0; _n=0; _sum=0; _mx=0; _g16=0; _g33=0; _fr=0
+  rm -f "$CONF/pt.gaps"
   while IFS= read -r _l; do
     case "$_l" in *"0000 0000 00000000"*) ;; *) continue ;; esac
     _ts=${_l#*\[}; _ts=${_ts%%\]*}; set -- $_ts; _ts=$1
@@ -286,6 +291,7 @@ pad_test() {   # segundos
     _fr=$((_fr+1))   # los tiempos van en segundos desde el arranque: se restan por separado para no pasar de 32 bits
     if [ "$_prev" = 1 ]; then
       _gap=$(( (_sec - _ps) * 1000000 + _us - _pu )); _n=$((_n+1)); _sum=$((_sum+_gap)); [ "$_gap" -gt "$_mx" ] && _mx=$_gap
+      echo "$_gap" >> "$CONF/pt.gaps"
       [ "$_gap" -gt 16000 ] && _g16=$((_g16+1)); [ "$_gap" -gt 33000 ] && _g33=$((_g33+1))
     fi
     _prev=1; _ps=$_sec; _pu=$_us
@@ -293,10 +299,113 @@ pad_test() {   # segundos
   rm -f "$CONF/pt.txt"
   if [ "$_n" -lt 20 ]; then echo "PAD|err|Muy pocos datos ($_fr reportes). Mueve los sticks sin parar durante la prueba"; return 1; fi
   _avg=$((_sum / _n)); _hz=$((1000000 / _avg)); _pc=$((_g16 * 100 / _n))
+  # p95 y saltos > 11 ms: el promedio esconde los tirones. Veredicto contra
+  # el piso Bluetooth (7,5 ms = 7500 µs): piso <= 8 ms, cerca <= 12 ms.
+  _p95=0; _gt11=0
+  if [ -s "$CONF/pt.gaps" ]; then
+    while read -r _gg; do isnum "$_gg" && [ "$_gg" -gt 11000 ] && _gt11=$((_gt11+1)); done < "$CONF/pt.gaps"
+    _pi=$(( _n * 95 / 100 )); [ "$_pi" -lt 1 ] && _pi=1
+    _p95=$(sort -n "$CONF/pt.gaps" | sed -n "${_pi}p" 2>/dev/null); isnum "$_p95" || _p95=0
+  fi
+  rm -f "$CONF/pt.gaps"
+  if [ "$_avg" -le 8000 ]; then _vd=piso; elif [ "$_avg" -le 12000 ]; then _vd=cerca; else _vd=alto; fi
   _mode=0; [ -f "$PADSTATE" ] && _mode=1
-  echo "$(date +%s)|$_mode|$_tr|$_hz|$_avg|$_mx|$_pc|$_nm" >> "$PADTESTS"
+  echo "$(date +%s)|$_mode|$_tr|$_hz|$_avg|$_mx|$_pc|$_nm|$_p95|$_gt11|$_vd" >> "$PADTESTS"
   { tail -n 8 "$PADTESTS" > "$PADTESTS.t"; mv -f "$PADTESTS.t" "$PADTESTS"; } 2>/dev/null
-  echo "PAD|ok|$_hz|$_avg|$_mx|$_pc|$_fr|$_mode|$_tr|$_nm"
+  echo "PAD|ok|$_hz|$_avg|$_mx|$_pc|$_fr|$_mode|$_tr|$_nm|$_p95|$_gt11|$_vd"
+}
+pad_test() {   # segundos — el mando que detecta pad_info (normalmente la mitad izquierda del X4)
+  _s=${1:-5}
+  _pi=$(pad_info) || { echo "PAD|err|No hay ningún mando conectado"; return 1; }
+  _ev=${_pi##*\|}; _rest=${_pi%\|*}; _nm=${_rest%\|*}; _tr=${_rest#*\|}   # la barra va escapada: en mksh (el sh de Android) una | sin escapar en un patrón significa "o"
+  pad_test_run "$_ev" "$_s" "$_nm" "$_tr"
+}
+
+# ---- GameSir X4 Aileron: Modo Ultra (v1.11) ----
+# Arquitectura del X4: el teléfono ve UN solo dispositivo Bluetooth
+# ("GameSir-X4A for Xbox") y es la mitad IZQUIERDA la que habla por
+# Bluetooth con el teléfono; la mitad DERECHA le habla a la izquierda
+# por un enlace RF propio. Por eso la derecha puede irse alentando con
+# el tiempo aunque el Bluetooth del teléfono esté bien, y por eso
+# desconectar y volver a conectar lo deja fluido: se resincroniza el
+# enlace RF y se renegocia el intervalo rápido. 0 ms no existe: el piso
+# Bluetooth es 7,5 ms por intervalo (props 6/9 = 7,5-11,25 ms). Ultra
+# deja todo en ese piso y lo mide por mitad: BT rápida + prioridad BT +
+# QoS estricto 60 µs + pantalla al máximo + Wi-Fi sin ahorro + sin
+# escaneos de radio. Al apagarlo se devuelve cada valor a como estaba
+# antes de encenderlo (archivo gs.orig).
+GSORIG=$CONF/gs.orig
+gs_is_name() {   # $1 = nombre: 1 si es GameSir / X4 Aileron
+  case "$1" in
+    *[Gg][Aa][Mm][Ee][Ss][Ii][Rr]*|*[Xx]4[Aa]*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+gs_halves() {   # dispositivos GameSir/X4 que ve el teléfono: "n|nombre1, nombre2" (normalmente 1: la izquierda; la derecha va por RF)
+  _gh_n=0; _gh_l=""
+  while IFS='|' read -r _gh_nm _gh_tr _gh_ev _gh_vid _gh_rec _gh_why; do
+    gs_is_name "$_gh_nm" || continue
+    [ "$_gh_rec" = 1 ] || continue
+    _gh_n=$((_gh_n+1)); _gh_l="${_gh_l:+$_gh_l, }$_gh_nm"
+  done <<EOF
+$(pad_scan)
+EOF
+  echo "$_gh_n|$_gh_l"
+}
+gs_a2dp() {   # audio Bluetooth conectado (best-effort: depende de lo que exponga dumpsys en esta ROM)
+  _ga=$(dumpsys bluetooth_manager 2>/dev/null </dev/null | grep -i 'a2dp' | grep -ci 'connected')
+  isnum "$_ga" && echo "$_ga" || echo 0
+}
+gs_status() {   # GS|ultra|es_gamesir|mitades|nombres|banda_wifi|a2dp|qos|bt_rapida|mando_on
+  _gs_h=$(gs_halves); _gs_n=${_gs_h%%|*}; _gs_l=${_gs_h#*|}
+  _gs_g=0; _gs_pi=$(pad_info 2>/dev/null); gs_is_name "${_gs_pi%%|*}" && _gs_g=1
+  echo "GS|$(cfg_get gs_ultra 0)|$_gs_g|$_gs_n|$_gs_l|$(bt_wifi_band)|$(gs_a2dp)|$(pad_qos_us)|$(cfg_get bt_fast 0)|$(cfg_get pad 0)"
+}
+gs_ultra_set() {   # on|off
+  K_ERR=""
+  case "$1" in
+    on)
+      _gu_bf=$(cfg_get bt_fast 0); _gu_qos=$(cfg_get pad_qos 150)
+      echo "bt_fast|$_gu_bf" > "$GSORIG"; echo "pad_qos|$_gu_qos" >> "$GSORIG"
+      cfg_set gs_ultra 1
+      cfg_set pad 1; padd_start || { K_ERR="no pude iniciar el vigilante del mando"; return 1; }
+      pad_qos_set 60 >/dev/null 2>&1
+      [ "$_gu_bf" = 1 ] || bt_fast_set on
+      btprio_set on >/dev/null 2>&1
+      cfg_set pad_hz 1; cfg_set pad_wifi 1; tune_set scan 1 >/dev/null 2>&1
+      log "GameSir Ultra: ON (QoS 60 µs, BT rápida, sin escaneos)"
+      ;;
+    off)
+      cfg_set gs_ultra 0
+      _gu_qos=$(grep '^pad_qos|' "$GSORIG" 2>/dev/null | cut -d'|' -f2)
+      _gu_bf=$(grep '^bt_fast|' "$GSORIG" 2>/dev/null | cut -d'|' -f2)
+      case "$_gu_qos" in 60|100|150|300) pad_qos_set "$_gu_qos" >/dev/null 2>&1 ;; esac
+      [ "$_gu_bf" = 0 ] && [ "$(cfg_get bt_fast 0)" = 1 ] && bt_fast_set off >/dev/null 2>&1
+      tune_set scan 0 >/dev/null 2>&1
+      rm -f "$GSORIG"
+      log "GameSir Ultra: OFF (valores devueltos)"
+      ;;
+    *) K_ERR="usa on u off"; return 1 ;;
+  esac
+  return 0
+}
+gs_test() {   # izq|der — mide SOLO ese stick durante 5 s (el otro quieto).
+  # Los dos sticks llegan por el mismo nodo Bluetooth (la izquierda los
+  # reenvía), así que la única forma de separar el enlace RF de la
+  # derecha del Bluetooth es mover un stick a la vez y comparar.
+  case "$1" in izq|der) ;; *) echo "PAD|err|usa izq o der"; return 1 ;; esac
+  _pi=$(pad_info) || { echo "PAD|err|No hay ningún mando conectado"; return 1; }
+  _ev=${_pi##*\|}; _rest=${_pi%\|*}; _nm=${_rest%\|*}; _tr=${_rest#*\|}
+  gs_is_name "$_nm" || { echo "PAD|err|El mando conectado no es un GameSir ($_nm)"; return 1; }
+  pad_test_run "$_ev" 5 "$_nm ($1)" "$_tr"
+}
+gs_resync() {   # reinicia la pila Bluetooth: renegocia el intervalo rápido y obliga a las mitades a resincronizarse al reconectar
+  K_ERR=""
+  bt_on || { K_ERR="el Bluetooth está apagado"; return 1; }
+  echo $(( $(date +%s) + 120 )) > "$CONF/pad.nostat"   # el corte es a propósito: no cuenta como corte del modo mando
+  bt_restart; log "GameSir: resincronización (Bluetooth reiniciado)"
+  btprio_boot
+  return 0
 }
 pad_status() {   # PADCFG|activado|vigilante|dentro|qos|existe_qos|nombre|conexión|evento
   [ "$(cfg_get pad 0)" = 1 ] && ! padd_alive && { log "modo mando: el vigilante estaba detenido, se reinicia"; padd_start; }
@@ -315,6 +424,7 @@ pad_dump() {
     echo "MaxG Power · informe del mando · $(date '+%F %T')"
     echo; echo "## Detección (nombre|conexión|evento|fabricante|reconocido|motivo)"; pad_scan
     echo; echo "## Mando elegido"; pad_info
+    echo; echo "## GameSir Ultra"; gs_status
     echo; echo "## /proc/bus/input/devices"; cat "$R/proc/bus/input/devices" 2>/dev/null
     echo; echo "## Modo mando"; grep -E '^(pad|pad_|bt_|auto|heat_)' "$CFG" 2>/dev/null; echo "estado: $(cat "$PADSTATE" 2>/dev/null)"; echo "vigilante: $(padd_alive && echo vivo || echo detenido)"
     [ -f "$PADFLAPS" ] && { echo "cortes:"; cat "$PADFLAPS"; }; [ -f "$PADTIME" ] && { echo "sesiones:"; cat "$PADTIME"; }

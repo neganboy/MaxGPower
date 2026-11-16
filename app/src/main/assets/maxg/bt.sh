@@ -75,6 +75,9 @@ pad_autofix() {   # 3 cortes en 15 min con el modo rápido: se desactiva solo
   [ "$af_n" -ge 3 ] || return 0
   log "modo mando: $af_n cortes en 15 min con el Bluetooth rápido; se desactiva solo"
   bt_fast_set off; cfg_set bt_autofixed "$af_now"
+  # Si GameSir Ultra estaba encendido, también se apaga: no tiene sentido
+  # dejar el QoS estricto si el enlace rápido ya no aguantó.
+  [ "$(cfg_get gs_ultra 0)" = 1 ] && { cfg_set gs_ultra 0; rm -f "$CONF/gs.orig"; log "GameSir Ultra: OFF por cortes (autofix)"; }
 }
 pad_sess_start() {   # $1 = transporte. Si vuelve a conectarse en menos de 90 s tras salir, cuenta como corte
   PS_T0=$(date +%s); PS_F=$(cfg_get bt_fast 0); PS_TR=$1

@@ -35,6 +35,68 @@ fun PadScreen(vm: MaxGViewModel, state: MaxGState, onOpenLog: (String) -> Unit) 
     val lastTest = state.padTests.firstOrNull()
 
     LazyColumn(Modifier.padding(horizontal = 18.dp)) {
+        // GameSir X4 Aileron — Modo Ultra (v1.11)
+        item {
+            NeuCard(Modifier.padding(top = 18.dp)) {
+                SectionTitle("GameSir X4 Aileron — Modo Ultra")
+                SectionSub("0 ms no existe: el piso Bluetooth es 7.5 ms y Ultra lo deja ahí. La mitad izquierda es la que habla por Bluetooth con el teléfono y la derecha le habla a la izquierda por RF: si la derecha se alenta con el tiempo, el problema es ese enlace RF, y se arregla resincronizando.")
+                Spacer(Modifier.height(10.dp))
+                RuleRow(
+                    "Modo Ultra",
+                    "BT rápida + prioridad BT + reposo de CPU estricto (60 µs) + pantalla al máximo + sin escaneos. Al apagarlo todo vuelve a como estaba."
+                ) {
+                    NeuSwitch(state.gamesir.ultra) {
+                        vm.runCommand("GameSir Ultra") { if (!state.gamesir.ultra) CtlClient.gamesirOn() else CtlClient.gamesirOff() }
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    if (state.gamesir.isGamesir) "Mando: ${state.gamesir.names.ifEmpty { "GameSir conectado" }} · ${state.gamesir.halves} dispositivo(s) Bluetooth (la derecha va por RF)"
+                    else "Sin GameSir conectado. Conecta el X4 Aileron para verlo aquí.",
+                    fontSize = 12.5.sp, color = NeuColors.Muted
+                )
+                if (state.gamesir.wifiBand == "2.4") {
+                    Text(
+                        "⚠ Wi-Fi en 2.4 GHz: comparte antena con el mando y con el enlace RF entre mitades. Cambia a 5 GHz para jugar.",
+                        fontSize = 12.5.sp, color = NeuColors.Muted, modifier = Modifier.padding(top = 6.dp)
+                    )
+                } else if (state.gamesir.wifiBand == "5" || state.gamesir.wifiBand == "6") {
+                    Text(
+                        "Wi-Fi en ${state.gamesir.wifiBand} GHz ✓ · Reposo CPU ${state.gamesir.qos} µs · BT rápida ${if (state.gamesir.btFast) "ON" else "OFF"}",
+                        fontSize = 12.5.sp, color = NeuColors.Muted, modifier = Modifier.padding(top = 6.dp)
+                    )
+                }
+                if (state.gamesir.a2dp > 0) {
+                    Text(
+                        "Audio Bluetooth conectado (${state.gamesir.a2dp}): desconéctalo mientras juegas, roba tiempo de radio.",
+                        fontSize = 12.5.sp, color = NeuColors.Muted, modifier = Modifier.padding(top = 6.dp)
+                    )
+                }
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "Prueba por mitad: mueve SOLO ese stick sin parar durante 5 s, el otro quieto. Si el derecho sale mucho peor que el izquierdo, el enlace RF es el culpable.",
+                    fontSize = 12.5.sp, color = NeuColors.Muted
+                )
+                Spacer(Modifier.height(10.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    NeuButton("Probar stick izq. 5 s", modifier = Modifier.weight(1f)) {
+                        vm.runCommand("GameSir") { CtlClient.gamesirTest("izq") }
+                    }
+                    NeuButton("Probar stick der. 5 s", modifier = Modifier.weight(1f)) {
+                        vm.runCommand("GameSir") { CtlClient.gamesirTest("der") }
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+                NeuButton("Resincronizar mitades", primary = true) {
+                    vm.runCommand("GameSir") { CtlClient.gamesirResync() }
+                }
+                Text(
+                    "Reinicia el Bluetooth unos segundos y renegocia el intervalo rápido. Si la derecha sigue lenta, desliza la mitad derecha fuera y vuelve a ponerla.",
+                    fontSize = 12.5.sp, color = NeuColors.Muted, modifier = Modifier.padding(top = 8.dp)
+                )
+            }
+        }
+
         // Modo Deluxe
         item {
             NeuCard(Modifier.padding(top = 18.dp)) {
@@ -205,8 +267,14 @@ fun PadScreen(vm: MaxGViewModel, state: MaxGState, onOpenLog: (String) -> Unit) 
                 if (state.padTests.isNotEmpty()) {
                     Spacer(Modifier.height(10.dp))
                     for (t in state.padTests.take(5)) {
+                        val verdictTxt = when (t.verdict) {
+                            "piso" -> "en el piso (7.5 ms)"
+                            "cerca" -> "cerca del piso"
+                            "alto" -> "lento — resincroniza"
+                            else -> ""
+                        }
                         Text(
-                            "• ${t.name.ifEmpty { "mando" }} — ${t.hz} Hz · prom ${t.avg} ms · máx ${t.max} ms",
+                            "• ${t.name.ifEmpty { "mando" }} — ${t.hz} Hz · prom ${"%.1f".format(t.avg / 1000f)} ms · p95 ${"%.1f".format(t.p95 / 1000f)} ms${if (verdictTxt.isNotEmpty()) " · $verdictTxt" else ""}",
                             fontSize = 12.5.sp, color = NeuColors.Muted
                         )
                     }

@@ -33,7 +33,7 @@ case "$C" in
     esac
     case "$_sm" in full|more)
       [ "${2-}" = fresh ] && PKGFRESH=1
-      echo "SECT|more"; pad_status; bt_status; bt_extra_status; auto_status; sess_status; tune_status; maint_status; deluxe_status; bgapps_status ;;
+      echo "SECT|more"; pad_status; gs_status; bt_status; bt_extra_status; auto_status; sess_status; tune_status; maint_status; deluxe_status; bgapps_status ;;
     esac
     case "$_sm" in full|boot|static)
       echo "SECT|static"
@@ -55,6 +55,14 @@ case "$C" in
          scan) pad_scan ;;
          clear) rm -f "$PADTESTS"; res pad ok "historial borrado" ;;
          *) echo "uso: pad on|off|test [seg]|status|clear" ;;
+       esac ;;
+  gamesir) case "$1" in
+         on) if gs_ultra_set on; then res gamesir ok "GameSir Ultra activado"; else res gamesir err "$K_ERR"; fi ;;
+         off) if gs_ultra_set off; then res gamesir ok "GameSir Ultra desactivado"; else res gamesir err "$K_ERR"; fi ;;
+         test) gs_test "$2" ;;
+         resync) if gs_resync; then res gamesir ok "Bluetooth reiniciado: las mitades se resincronizan al reconectar"; else res gamesir err "$K_ERR"; fi ;;
+         status) gs_status ;;
+         *) echo "uso: gamesir on|off|test izq|der|resync|status" ;;
        esac ;;
   info)
     _mt=$(sed -n 's/^MemTotal: *\([0-9]*\).*/\1/p' $R/proc/meminfo); _ma=$(sed -n 's/^MemAvailable: *\([0-9]*\).*/\1/p' $R/proc/meminfo)
